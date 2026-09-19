@@ -1,6 +1,9 @@
-const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const configuredBaseUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const baseUrl = configuredBaseUrl || (import.meta.env.DEV ? 'http://localhost:3001/api' : '');
+const missingBaseUrlMessage = 'The API URL is not configured for this deployment.';
 const headers = { 'Content-Type': 'application/json' };
 async function request(path, options = {}) {
+  if (!baseUrl) throw new Error(missingBaseUrlMessage);
   const response = await fetch(`${baseUrl}${path}`, { ...options, credentials: 'include', headers: { ...headers, ...options.headers } });
   const body = await response.json();
   if (!response.ok) { const error = new Error(body.error || 'Request failed.'); error.status = response.status; throw error; }
