@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import React from 'react';
+
 export default function CameraScanner({ onDetected, onClose }) {
   const videoRef = useRef(null);
   const detectedRef = useRef(onDetected);

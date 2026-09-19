@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
+import React from 'react';
 
 const blankVariant = () => ({ size: '', sku: '', barcode: '', qrCode: '', price: '', quantity: '', reorderPoint: '3' });
 

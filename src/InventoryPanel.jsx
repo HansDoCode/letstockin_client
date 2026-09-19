@@ -1,5 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 import { api } from './api.js';
+import React from 'react';
 
 export default function InventoryPanel({ role }) {
   const [query, setQuery] = useState(''); const [rows, setRows] = useState([]); const [adjustment, setAdjustment] = useState(null); const [delta, setDelta] = useState(''); const [reason, setReason] = useState(''); const [notice, setNotice] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);

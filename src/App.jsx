@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
+import React from 'react';
 import InventoryPanel from './InventoryPanel.jsx';
 import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
 import ProductPanel from './ProductPanel.jsx';
