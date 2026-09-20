@@ -1,9 +1,10 @@
 const configuredBaseUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-const baseUrl = configuredBaseUrl || (import.meta.env.DEV ? 'http://localhost:3001/api' : '');
-const missingBaseUrlMessage = 'The API URL is not configured for this deployment.';
+// Production uses Vercel's same-origin /api rewrite. This keeps the HTTP-only
+// session cookie first-party instead of depending on third-party cookie access
+// between the Vercel frontend and Render backend.
+const baseUrl = import.meta.env.DEV ? (configuredBaseUrl || 'http://localhost:3001/api') : '/api';
 const headers = { 'Content-Type': 'application/json' };
 async function request(path, options = {}) {
-  if (!baseUrl) throw new Error(missingBaseUrlMessage);
   const response = await fetch(`${baseUrl}${path}`, { ...options, credentials: 'include', headers: { ...headers, ...options.headers } });
   const body = await response.json();
   if (!response.ok) { const error = new Error(body.error || 'Request failed.'); error.status = response.status; throw error; }
