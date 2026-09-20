@@ -1,4 +1,8 @@
-const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const configuredBaseUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+// Production uses Vercel's same-origin /api rewrite. This keeps the HTTP-only
+// session cookie first-party instead of depending on third-party cookie access
+// between the Vercel frontend and Render backend.
+const baseUrl = import.meta.env.DEV ? (configuredBaseUrl || 'http://localhost:3001/api') : '/api';
 const headers = { 'Content-Type': 'application/json' };
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, { ...options, credentials: 'include', headers: { ...headers, ...options.headers } });
