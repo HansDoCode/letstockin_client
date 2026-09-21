@@ -1,36 +1,41 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from './api.js';
-import React from 'react';
 import ReturnsPanel from './ReturnsPanel.jsx';
 
-const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100);
+const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
 
 export function ReportsPanel() {
-  const [overview, setOverview] = useState(null);
-  const [sales, setSales] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const today = new Date().toISOString().slice(0, 10);
+  const [period, setPeriod] = useState('daily');
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const [page, setPage] = useState(1);
+  const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   async function load() {
     setLoading(true); setError('');
-    try {
-      const [nextOverview, nextSales, nextAlerts] = await Promise.all([api.overview(), api.sales(), api.lowStock()]);
-      setOverview(nextOverview); setSales(nextSales); setAlerts(nextAlerts);
-    } catch (cause) { setError(cause.message || 'Reports could not be loaded.'); }
+    try { setReport(await api.salesReport({ period, from, to, page, pageSize: 25 })); }
+    catch (cause) { setError(cause.message || 'Reports could not be loaded.'); }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [period, from, to, page]);
 
-  const cards = [['Net sales today', overview ? money(overview.todaySalesCents) : '—'], ['Orders today', overview?.todayOrders ?? '—'], ['Low-stock variants', overview?.lowStockCount ?? '—'], ['Units in stock', overview?.unitsInStock ?? '—']];
-  const emptySales = loading ? 'Loading transactions...' : error ? 'Transactions are unavailable.' : 'No completed sales yet.';
-  const emptyAlerts = loading ? 'Loading stock alerts...' : error ? 'Stock alerts are unavailable.' : 'All stocked variants are above their reorder points.';
+  const summary = report?.summary;
+  const cards = [['Gross sales', summary ? money(summary.grossSalesCents) : '—'], ['Discounts', summary ? money(summary.discountCents) : '—'], ['Refunds', summary ? money(summary.refundCents) : '—'], ['Net sales', summary ? money(summary.netSalesCents) : '—'], ['Orders', summary?.orderCount ?? '—'], ['Units sold', summary?.unitsSold ?? '—'], ['Units returned', summary?.unitsReturned ?? '—']];
+  const maxValue = Math.max(1, ...(report?.series || []).map(point => Math.abs(point.netSalesCents)));
+  const emptyActivity = loading ? 'Loading sales activity…' : error ? 'Sales activity is unavailable.' : 'No sales or refunds in this period.';
+  function choosePeriod(next) { setPeriod(next); setPage(1); }
+
   return <>
-    <section className="admin-heading"><p className="eyebrow">Sales intelligence</p><h1>Reports & analytics</h1><p>Track today’s retail performance and stock that needs attention.</p></section>
+    <section className="admin-heading"><p className="eyebrow">Sales intelligence</p><h1>Reports & analytics</h1><p>Review sales and refund activity using store-calendar reporting periods.</p></section>
+    <section className="report-controls" aria-label="Report period"><div className="period-tabs">{[['daily', 'Today'], ['weekly', 'This week'], ['monthly', 'This month'], ['custom', 'Custom range']].map(([value, label]) => <button key={value} className={period === value ? 'active' : ''} onClick={() => choosePeriod(value)}>{label}</button>)}</div>{period === 'custom' && <div className="date-range"><label className="field">From<input type="date" value={from} max={to} onChange={event => { setFrom(event.target.value); setPage(1); }} /></label><label className="field">To<input type="date" value={to} min={from} onChange={event => { setTo(event.target.value); setPage(1); }} /></label></div>}{report?.range && <p>{report.range.from} to {report.range.to} · {report.range.timeZone}</p>}</section>
     {error && <p className="form-notice" role="alert">{error}</p>}
     <section className="metric-grid">{cards.map(([label, value]) => <article key={label}><span>{label}</span><b>{value}</b></article>)}</section>
-    <section className="admin-grid"><Panel title="Recent transactions"><table><thead><tr><th>Sale</th><th>Staff</th><th>Items</th><th>Total</th></tr></thead><tbody>{sales.length ? sales.slice(0, 6).map(s => <tr key={s.id}><td>#{s.id}</td><td>{s.staffName || '—'}</td><td>{s.itemCount}</td><td><b>{money(s.totalCents)}</b></td></tr>) : <Empty colSpan={4} text={emptySales} />}</tbody></table></Panel><Panel title="Low-stock alerts"><div className="alert-list">{alerts.length ? alerts.map(a => <div key={a.variantId}><span><b>{a.name}</b><small>Size {a.size} · reorder at {a.reorder_point}</small></span><strong>{a.quantity} left</strong></div>) : <p className="blank">{emptyAlerts}</p>}</div></Panel></section>
+    <section className="data-panel sales-chart-panel"><h2>Daily net sales</h2>{report?.series?.length ? <div className="sales-chart" role="img" aria-label="Daily net sales bar chart">{report.series.map(point => <div className="chart-column" key={point.date} title={`${point.date}: ${money(point.netSalesCents)}`}><span className={point.netSalesCents < 0 ? 'chart-bar negative' : 'chart-bar'} style={{ height: `${Math.max(3, Math.abs(point.netSalesCents) / maxValue * 100)}%` }} /><small>{report.series.length <= 14 ? point.date.slice(5) : new Date(`${point.date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>)}</div> : <p className="blank">{loading ? 'Loading chart…' : 'No sales data for this period.'}</p>}</section>
+    <Panel title="Sales and refund activity"><table><thead><tr><th>Type</th><th>Reference</th><th>Date</th><th>Staff</th><th>Units</th><th>Total</th></tr></thead><tbody>{report?.activities?.length ? report.activities.map(activity => <tr key={`${activity.type}-${activity.id}`}><td><span className={`activity-type ${activity.type}`}>{activity.type}</span></td><td>Sale #{activity.saleId}</td><td>{new Date(activity.occurredAt).toLocaleString(undefined, { timeZone: report.range.timeZone })}</td><td>{activity.staffName || '—'}</td><td>{activity.units}</td><td><b className={activity.totalCents < 0 ? 'negative-money' : ''}>{money(activity.totalCents)}</b></td></tr>) : <Empty colSpan={6} text={emptyActivity} />}</tbody></table>{report?.pagination?.totalPages > 1 && <div className="pagination"><button className="secondary" disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Previous</button><span>Page {page} of {report.pagination.totalPages}</span><button className="secondary" disabled={page >= report.pagination.totalPages || loading} onClick={() => setPage(current => current + 1)}>Next</button></div>}</Panel>
     <ReturnsPanel onReturned={load} />
   </>;
 }
@@ -40,23 +45,12 @@ export function TeamPanel() {
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [role, setRole] = useState('staff');
   const [notice, setNotice] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
-    try { setUsers(await api.users()); setError(''); }
-    catch (cause) { setUsers([]); setError(cause.message || 'Team accounts could not be loaded.'); }
-    finally { setLoading(false); }
-  }
-
+  async function load() { setLoading(true); try { setUsers(await api.users()); setError(''); } catch (cause) { setUsers([]); setError(cause.message || 'Team accounts could not be loaded.'); } finally { setLoading(false); } }
   useEffect(() => { load(); }, []);
+  async function invite(event) { event.preventDefault(); setNotice(''); try { const user = await api.createUser({ name, email, password, role }); setUsers(current => [...current, user]); setError(''); setName(''); setEmail(''); setPassword(''); setNotice('Account created. Give the password to the team member securely.'); } catch (cause) { setNotice(cause.message || 'Account could not be created.'); } }
 
-  async function invite(event) {
-    event.preventDefault(); setNotice('');
-    try { const user = await api.createUser({ name, email, password, role }); setUsers(current => [...current, user]); setError(''); setName(''); setEmail(''); setPassword(''); setNotice('Account created. Give the password to the team member securely.'); }
-    catch (cause) { setNotice(cause.message || 'Account could not be created.'); }
-  }
-
-  const emptyUsers = loading ? 'Loading team accounts...' : error ? 'Team accounts are unavailable.' : 'No team accounts yet.';
-  return <><section className="admin-heading"><p className="eyebrow">Access control</p><h1>Team accounts</h1><p>Staff operate checkout; administrators manage inventory, reports, products, and permissions.</p></section>{error && <p className="form-notice" role="alert">{error}</p>}<section className="team-layout"><Panel title="Staff and admins"><table><thead><tr><th>Team member</th><th>Email</th><th>Role</th><th>Created</th></tr></thead><tbody>{users.length ? users.map(user => <tr key={user.id}><td><b>{user.name}</b></td><td>{user.email}</td><td><span className={`role ${user.role}`}>{user.role}</span></td><td>{new Date(user.createdAt).toLocaleDateString()}</td></tr>) : <Empty colSpan={4} text={emptyUsers} />}</tbody></table></Panel><form className="invite-form" onSubmit={invite}><h2>Add team member</h2><label className="field">Name<input required maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder="Jordan Lee" /></label><label className="field">Email<input required type="email" maxLength={320} value={email} onChange={e => setEmail(e.target.value)} placeholder="jordan@example.com" /></label><label className="field">Password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><label className="field">Role<select value={role} onChange={e => setRole(e.target.value)}><option value="staff">Staff</option><option value="admin">Admin</option></select></label>{notice && <p className="form-notice" role="status">{notice}</p>}<button className="checkout">Create account</button></form></section></>;
+  const emptyUsers = loading ? 'Loading team accounts…' : error ? 'Team accounts are unavailable.' : 'No team accounts yet.';
+  return <><section className="admin-heading"><p className="eyebrow">Access control</p><h1>Team accounts</h1><p>Staff operate checkout and view inventory alerts; administrators manage inventory, reports, products, and permissions.</p></section>{error && <p className="form-notice" role="alert">{error}</p>}<section className="team-layout"><Panel title="Staff and admins"><table><thead><tr><th>Team member</th><th>Email</th><th>Role</th><th>Created</th></tr></thead><tbody>{users.length ? users.map(user => <tr key={user.id}><td><b>{user.name}</b></td><td>{user.email}</td><td><span className={`role ${user.role}`}>{user.role}</span></td><td>{new Date(user.createdAt).toLocaleDateString()}</td></tr>) : <Empty colSpan={4} text={emptyUsers} />}</tbody></table></Panel><form className="invite-form" onSubmit={invite}><h2>Add team member</h2><label className="field">Name<input required maxLength={120} value={name} onChange={event => setName(event.target.value)} placeholder="Jordan Lee" /></label><label className="field">Email<input required type="email" maxLength={320} value={email} onChange={event => setEmail(event.target.value)} placeholder="jordan@example.com" /></label><label className="field">Password<input required type="password" minLength={12} maxLength={256} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="field">Role<select value={role} onChange={event => setRole(event.target.value)}><option value="staff">Staff</option><option value="admin">Admin</option></select></label>{notice && <p className="form-notice" role="status">{notice}</p>}<button className="checkout">Create account</button></form></section></>;
 }
 
 function Panel({ title, children }) { return <section className="data-panel"><h2>{title}</h2><div className="table-scroll">{children}</div></section>; }

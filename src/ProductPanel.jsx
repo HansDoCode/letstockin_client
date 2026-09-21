@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import React from 'react';
 
-const blankVariant = () => ({ size: '', sku: '', barcode: '', qrCode: '', price: '', quantity: '', reorderPoint: '3' });
+const blankVariant = () => ({ size: '', color: '', sku: '', barcode: '', qrCode: '', price: '', quantity: '', reorderPoint: '5' });
 
-export default function ProductPanel() {
+export default function ProductPanel({ onStockChanged }) {
   const [name, setName] = useState('');
   const [variants, setVariants] = useState([blankVariant()]);
   const [notice, setNotice] = useState('');
@@ -30,7 +30,7 @@ export default function ProductPanel() {
     event.preventDefault(); setSaving(true); setNotice('');
     try {
       await api.createProduct({ name, variants: variants.map(row => ({ ...row, priceCents: Math.round(Number(row.price) * 100), quantity: Number(row.quantity), reorderPoint: Number(row.reorderPoint) })) });
-      setName(''); setVariants([blankVariant()]); setNotice('Product and stock saved.'); await loadCatalog();
+      setName(''); setVariants([blankVariant()]); setNotice('Product and stock saved.'); await loadCatalog(); onStockChanged?.();
     } catch (error) { setNotice(error.message); }
     finally { setSaving(false); }
   }
@@ -41,25 +41,26 @@ export default function ProductPanel() {
       const nextStatus = product.status === 'active' ? 'archived' : 'active';
       await api.updateProductStatus(product.id, nextStatus);
       setNotice(`${product.name} is now ${nextStatus}.`);
-      await loadCatalog();
+      await loadCatalog(); onStockChanged?.();
     } catch (error) { setNotice(error.message); }
     finally { setStatusBusy(null); }
   }
 
   return <>
-    <section className="admin-heading"><p className="eyebrow">Catalog management</p><h1>Add a product</h1><p>Create each clothing size as a variant. Barcode and QR codes resolve to the exact size during scanning.</p></section>
+    <section className="admin-heading"><p className="eyebrow">Catalog management</p><h1>Add a product</h1><p>Create each size and color as a variant. Barcode and QR codes resolve to the exact variant during scanning.</p></section>
     <form className="product-form" onSubmit={submit}>
       <label className="field product-name">Product name<input required maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Coastal Linen Shirt" /></label>
-      <div className="variant-head"><h2>Variants & stock</h2><button type="button" className="secondary" onClick={() => setVariants(rows => [...rows, blankVariant()])}>+ Add size</button></div>
+      <div className="variant-head"><h2>Variants & stock</h2><button type="button" className="secondary" onClick={() => setVariants(rows => [...rows, blankVariant()])}>+ Add variant</button></div>
       <div className="variant-list">{variants.map((variant, index) => <fieldset key={index}>
-        <legend>Size variant {index + 1}</legend>
+        <legend>Variant {index + 1}</legend>
         <label className="field">Size<input required maxLength={50} value={variant.size} onChange={e => updateVariant(index, 'size', e.target.value)} placeholder="M" /></label>
+        <label className="field">Color<input required maxLength={50} value={variant.color} onChange={e => updateVariant(index, 'color', e.target.value)} placeholder="Navy" /></label>
         <label className="field">SKU<input required maxLength={100} value={variant.sku} onChange={e => updateVariant(index, 'sku', e.target.value)} placeholder="CLS-M" /></label>
         <label className="field">Barcode<input maxLength={200} value={variant.barcode} onChange={e => updateVariant(index, 'barcode', e.target.value)} placeholder="100002" /></label>
         <label className="field">QR code<input maxLength={200} value={variant.qrCode} onChange={e => updateVariant(index, 'qrCode', e.target.value)} placeholder="QR-CLS-M" /></label>
-        <label className="field">Price ($)<input required min="0" step="0.01" type="number" value={variant.price} onChange={e => updateVariant(index, 'price', e.target.value)} placeholder="49.00" /></label>
+        <label className="field">Price (₱)<input required min="0" step="0.01" type="number" value={variant.price} onChange={e => updateVariant(index, 'price', e.target.value)} placeholder="49.00" /></label>
         <label className="field">Opening stock<input required min="0" step="1" type="number" value={variant.quantity} onChange={e => updateVariant(index, 'quantity', e.target.value)} placeholder="0" /></label>
-        <label className="field">Low-stock at<input required min="0" step="1" type="number" value={variant.reorderPoint} onChange={e => updateVariant(index, 'reorderPoint', e.target.value)} /></label>
+        <label className="field">Low-stock at<input required min="5" step="1" type="number" value={variant.reorderPoint} onChange={e => updateVariant(index, 'reorderPoint', e.target.value)} /></label>
         {variants.length > 1 && <button type="button" className="remove" onClick={() => setVariants(rows => rows.filter((_, i) => i !== index))}>Remove</button>}
       </fieldset>)}</div>
       {notice && <p className="form-notice" role="status">{notice}</p>}

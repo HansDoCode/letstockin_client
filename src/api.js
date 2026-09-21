@@ -19,6 +19,11 @@ export const api = {
   products: (q = '', status) => request(`/products?q=${encodeURIComponent(q)}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
   inventory: (q = '') => request(`/inventory?q=${encodeURIComponent(q)}`),
   overview: () => request('/reports/overview'),
+  salesReport: ({ period, from, to, page = 1, pageSize = 25 }) => {
+    const params = new URLSearchParams({ period, page: String(page), pageSize: String(pageSize) });
+    if (period === 'custom') { params.set('from', from); params.set('to', to); }
+    return request(`/reports/sales?${params}`);
+  },
   sales: () => request('/sales'),
   lowStock: () => request('/alerts/low-stock'),
   users: () => request('/users'),
