@@ -4,8 +4,12 @@ import InventoryPanel from './InventoryPanel.jsx';
 import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
 import ProductPanel from './ProductPanel.jsx';
 import CameraScanner from './CameraScanner.jsx';
+import { parseCashCents } from './pos-money.js';
+import { SIZE_OPTIONS } from './product-variants.js';
 
 const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
+const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
+const productImageStorageKey = 'letstockin:product-images';
 const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team']];
 
 function handleDialogKeys(event, container, onClose) {
@@ -105,21 +109,52 @@ function PasswordResetPage() {
 }
 
 function Receipt({ receipt, onClose }) {
-  return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}><div className="receipt-head"><div><p className="eyebrow">Completed sale</p><h2>Receipt #{receipt.id}</h2></div><button className="secondary" onClick={onClose}>Close</button></div><p>{new Date(receipt.createdAt).toLocaleString()} · {receipt.staffName} · Cash recorded</p><div className="receipt-lines">{receipt.items.map(item => <div key={item.id}><span>{item.name} · {item.size} / {item.color} × {item.quantity}{item.discountCents ? ` · Discount ${money(item.discountCents)}` : ''}</span><b>{money(item.totalCents)}</b></div>)}</div><div className="receipt-total"><span>Total paid</span><b>{money(receipt.totalCents)}</b></div><button className="secondary" onClick={() => window.print()}>Print receipt</button></section>;
+  return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}><div className="receipt-head"><div><p className="eyebrow">Completed sale</p><h2>Receipt #{receipt.id}</h2></div><button className="secondary" onClick={onClose}>Close</button></div><p>{new Date(receipt.createdAt).toLocaleString()} · {receipt.staffName} · Cash recorded</p><div className="receipt-lines">{receipt.items.map(item => <div key={item.id}><span>{item.name} · {item.size} / {item.color} × {item.quantity}{item.discountCents ? ` · Discount ${money(item.discountCents)}` : ''}</span><b>{money(item.totalCents)}</b></div>)}</div><div className="receipt-total"><span>Total paid</span><b>{money(receipt.totalCents)}</b></div>{receipt.cashReceivedCents != null && <div className="receipt-cash"><div><span>Cash received</span><b>{money(receipt.cashReceivedCents)}</b></div><div><span>{receipt.cashReceivedCents >= receipt.totalCents ? 'Change to give' : 'Cash short'}</span><b>{money(Math.abs(receipt.cashReceivedCents - receipt.totalCents))}</b></div></div>}<button className="secondary" onClick={() => window.print()}>Print receipt</button></section>;
+}
+
+function DiscountEditor({ line, onChange, disabled = false }) {
+  const gross = line.variant.priceCents * line.quantity;
+  const [draft, setDraft] = useState(line.discountCents ? (line.discountCents / 100).toFixed(2) : '');
+  useEffect(() => { setDraft(line.discountCents ? (line.discountCents / 100).toFixed(2) : ''); }, [line.discountCents]);
+  function commit(value) {
+    const amount = value.trim() === '' ? 0 : Number(value);
+    const cents = Number.isFinite(amount) ? Math.round(amount * 100) : line.discountCents;
+    const next = Math.min(Math.max(0, cents), gross);
+    onChange(next);
+    setDraft(next ? (next / 100).toFixed(2) : '');
+  }
+  return <div className="discount-editor">
+    <div className="discount-head"><label htmlFor={`discount-${line.variant.id}`}>Discount</label><small>max {money(gross)}</small></div>
+    <div className="discount-entry"><span aria-hidden="true">PHP</span><input id={`discount-${line.variant.id}`} aria-label="Discount amount in Philippine pesos" inputMode="decimal" type="number" min="0" max={(gross / 100).toFixed(2)} step="0.01" value={draft} placeholder="0.00" disabled={disabled} onChange={event => setDraft(event.target.value)} onBlur={() => commit(draft)} />{line.discountCents > 0 && <button type="button" className="discount-clear" disabled={disabled} onClick={() => { onChange(0); setDraft(''); }}>Clear</button>}</div>
+    <div className="discount-presets" aria-label="Quick discount"><span>Quick</span>{[10, 20, 50].map(percent => <button type="button" key={percent} disabled={disabled} onClick={() => onChange(Math.round(gross * percent / 100))}>{percent}%</button>)}</div>
+  </div>;
 }
 
 function PosPanel({ onStockChanged }) {
   const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null);
+  const [productImages, setProductImages] = useState(() => { try { const saved = JSON.parse(window.localStorage.getItem(productImageStorageKey) || '{}'); return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}; } catch { return {}; } });
+  const [cashReceived, setCashReceived] = useState('');
+  const searchRef = useRef(null); const cartRef = useRef(null); const receiptRef = useRef(null);
+  useEffect(() => { if (receipt) receiptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [receipt]);
   useEffect(() => {
     let current = true;
     const timer = window.setTimeout(async () => { if (current) setCatalogLoading(true); try { const result = await api.products(query); if (current) { setProducts(result); setCatalogError(''); } } catch (cause) { if (current) { setProducts([]); setCatalogError(cause.message || 'Products could not be loaded.'); } } finally { if (current) setCatalogLoading(false); } }, 220);
     return () => { current = false; window.clearTimeout(timer); };
   }, [query]);
-  const visibleProducts = useMemo(() => [...products].sort((a, b) => sort === 'recent' ? new Date(b.created_at) - new Date(a.created_at) : sort === 'all' ? a.name.localeCompare(b.name) : Number(b.stock > 0) - Number(a.stock > 0) || a.name.localeCompare(b.name)), [products, sort]);
+  const visibleProducts = useMemo(() => [...products].sort((a, b) => {
+    if (sort === 'recent') return new Date(b.created_at) - new Date(a.created_at);
+    if (sort === 'all') return a.name.localeCompare(b.name);
+    const healthy = product => product.variants?.some(variant => variant.stock <= variant.reorderPoint) ? 0 : 1;
+    return Number(b.stock > 0) - Number(a.stock > 0) || healthy(b) - healthy(a) || a.name.localeCompare(b.name);
+  }), [products, sort]);
   const totals = useMemo(() => { const subtotal = cart.reduce((sum, line) => sum + line.variant.priceCents * line.quantity, 0); const discount = cart.reduce((sum, line) => sum + Math.min(line.discountCents, line.variant.priceCents * line.quantity), 0); return { subtotal, discount, total: subtotal - discount }; }, [cart]);
+  const cashCents = parseCashCents(cashReceived);
+  const canPay = Number.isSafeInteger(cashCents) && cashCents >= totals.total;
 
   function add(product, variant, scanned = false) {
+    if (loading) return;
     if (!variant?.stock) return setNotice('That size and color is out of stock.');
+    if (cart.find(line => line.variant.id === variant.id)?.quantity >= variant.stock) return setNotice(`Only ${variant.stock} available for ${product.name}, ${variant.size} / ${variant.color}.`);
     setCart(items => { const line = items.find(item => item.variant.id === variant.id); return line ? items.map(item => item.variant.id === variant.id ? { ...item, quantity: Math.min(item.quantity + 1, variant.stock) } : item) : [...items, { product, variant, quantity: 1, discountCents: 0 }]; });
     setNotice(`${scanned ? 'Product found — ' : ''}${product.name}, ${variant.size} / ${variant.color}, ${money(variant.priceCents)} added.`);
   }
@@ -133,11 +168,88 @@ function PosPanel({ onStockChanged }) {
       else add({ id: result.productId, name: result.name }, { ...matched, stock: matched.quantity }, true);
     } catch (error) { setNotice(error.message || 'No product matched that barcode or QR code.'); }
   }
-  function scan(event) { if (event.key !== 'Enter' || !event.currentTarget.value.trim()) return; event.preventDefault(); const code = event.currentTarget.value.trim(); setQuery(''); resolveCode(code); }
+  function scan(event) { if (event.key !== 'Enter' || !event.currentTarget.value.trim() || loading) return; event.preventDefault(); const code = event.currentTarget.value.trim(); setQuery(''); resolveCode(code); }
   function closeCamera() { setCameraOpen(false); requestAnimationFrame(() => document.querySelector('.camera-trigger')?.focus()); }
-  async function checkout() { if (!cart.length) return; setLoading(true); try { const sale = await api.checkout({ paymentMethod: 'cash', items: cart.map(line => ({ variantId: line.variant.id, quantity: line.quantity, discountCents: line.discountCents, discountReason: line.discountCents ? 'Item discount' : null })) }); setCart([]); setNotice(`Sale #${sale.id} completed — ${money(sale.total_cents)}.`); try { setReceipt(await api.receipt(sale.id)); } catch { setNotice(`Sale #${sale.id} completed, but its receipt could not be loaded.`); } try { setProducts(await api.products(query)); } catch { setCatalogError('Stock could not be refreshed.'); } onStockChanged?.(); } catch (error) { setNotice(error.message); } finally { setLoading(false); } }
+  function saveProductImage(productId, event) {
+    const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return setNotice('Choose an image file.');
+    if (file.size > 2_000_000) return setNotice('Use an image smaller than 2 MB.');
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return setNotice('That image could not be read.');
+      const next = { ...productImages, [productId]: reader.result };
+      try { window.localStorage.setItem(productImageStorageKey, JSON.stringify(next)); setProductImages(next); setNotice('Product image saved on this device.'); }
+      catch { setNotice('Image could not be saved. Use a smaller file.'); }
+    };
+    reader.onerror = () => setNotice('That image could not be read.');
+    reader.readAsDataURL(file);
+  }
+  async function checkout() {
+    if (!cart.length || !canPay || loading) return;
+    setLoading(true);
+    try {
+      const sale = await api.checkout({ paymentMethod: 'cash', items: cart.map(line => ({ variantId: line.variant.id, quantity: line.quantity, discountCents: line.discountCents, discountReason: line.discountCents ? 'Item discount' : null })) });
+      const balance = cashCents - sale.total_cents;
+      const paymentMessage = balance >= 0 ? `Change: ${money(balance)}.` : `Cash short by ${money(-balance)}; verify the final price.`;
+      setCart([]); setCashReceived(''); setReceipt(null);
+      setNotice(`Sale #${sale.id} completed. ${paymentMessage}`);
+      try { setReceipt({ ...(await api.receipt(sale.id)), cashReceivedCents: cashCents }); }
+      catch { setNotice(`Sale #${sale.id} completed. ${paymentMessage} Receipt could not be loaded.`); searchRef.current?.scrollIntoView({ behavior: 'smooth' }); }
+      try { setProducts(await api.products(query)); } catch { setCatalogError('Stock could not be refreshed.'); }
+      onStockChanged?.();
+    } catch (error) { setNotice(error.message); }
+    finally { setLoading(false); }
+  }
 
-  return <><header><div><p className="eyebrow">Retail workspace</p><h1>Point of sale</h1></div></header>{notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}<div className="pos-grid"><section className="catalog"><div className="search"><span>⌕</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} onKeyDown={scan} placeholder="Search products, barcode, QR, size, or color…" /><kbd>Enter to scan</kbd></div><div className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div><div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><button className="scan" onClick={() => document.querySelector('.search input')?.focus()}>⌁ Scan code</button><button className="scan camera-trigger" onClick={() => setCameraOpen(true)}>Use camera</button></div>{catalogError && <p className="form-notice" role="alert">{catalogError}</p>}{!catalogError && catalogLoading && <p className="catalog-state" role="status">Loading products…</p>}{!catalogError && !catalogLoading && !visibleProducts.length && <p className="catalog-state">No active products matched that search.</p>}<div className="cards">{visibleProducts.map(product => <article className="product-card" key={product.id}><div className="product-art">{product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}</div><div className="product-info"><div><h3>{product.name}</h3><p>{product.stock} units across variants</p></div><strong>{money(product.variants?.[0]?.priceCents)}</strong></div><div className="sizes" aria-label={`Variants for ${product.name}`}>{product.variants?.map(variant => <button key={variant.id} disabled={!variant.stock} title={`${variant.color} · ${variant.stock} available`} onClick={() => add(product, variant)} className={variant.stock <= variant.reorderPoint ? 'low' : ''}>{variant.size}<small>{variant.color}</small></button>)}</div></article>)}</div></section><aside className="cart"><div className="cart-title"><div><p className="eyebrow">Current order</p><h2>Cart <span>{cart.length}</span></h2></div><button className="clear" onClick={() => setCart([])} disabled={!cart.length}>Clear</button></div><div className="cart-lines">{cart.length ? cart.map(line => <div className="line" key={line.variant.id}><div className="line-art">{line.product.name[0]}</div><div className="line-main"><b>{line.product.name}</b><small>{line.variant.size} / {line.variant.color} · {money(line.variant.priceCents)}</small><div className="line-controls"><button onClick={() => updateLine(line.variant.id, { quantity: Math.max(1, line.quantity - 1) })}>−</button><span>{line.quantity}</span><button onClick={() => updateLine(line.variant.id, { quantity: Math.min(line.variant.stock, line.quantity + 1) })}>+</button><label>Discount <input aria-label="Discount in Philippine pesos" value={(line.discountCents / 100).toFixed(2)} type="number" min="0" max={(line.variant.priceCents * line.quantity / 100).toFixed(2)} onChange={event => updateLine(line.variant.id, { discountCents: Math.round(Number(event.target.value) * 100) || 0 })} /></label></div></div><b>{money(line.variant.priceCents * line.quantity - line.discountCents)}</b></div>) : <div className="empty"><span>⌁</span><b>Your cart is empty</b><p>Scan a barcode or choose a size and color to begin.</p></div>}</div><div className="totals"><div><span>Subtotal</span><b>{money(totals.subtotal)}</b></div><div><span>Item discounts</span><b className="orange">−{money(totals.discount)}</b></div><div className="grand"><span>Total</span><b>{money(totals.total)}</b></div><button className="checkout" disabled={!cart.length || loading} onClick={checkout}>{loading ? 'Processing…' : `Checkout · ${money(totals.total)}`}</button><p className="payment">Cash payment recorded</p></div></aside></div>{receipt && <Receipt receipt={receipt} onClose={() => setReceipt(null)} />}{cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}{qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}</>;
+  return <>
+    <header><div><p className="eyebrow">Retail workspace</p><h1>Point of sale</h1></div></header>
+    {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
+    <div className="pos-grid">
+      <section className="catalog">
+        <div className="search"><span aria-hidden="true">⌕</span><input ref={searchRef} autoFocus aria-label="Search products or scan a code" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={scan} placeholder="Search products or scan a code…" disabled={loading} /><button type="button" className="search-clear" onClick={() => { setQuery(''); searchRef.current?.focus(); }} disabled={!query || loading} aria-label="Clear search">×</button><kbd>Enter to scan</kbd></div>
+        <div className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div>
+        <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><button className="scan" disabled={loading} onClick={() => searchRef.current?.focus()}>⌁ Scan code</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Use camera</button></div>
+        {catalogError && <p className="form-notice" role="alert">{catalogError}</p>}
+        {!catalogError && catalogLoading && <p className="catalog-state" role="status">Loading products…</p>}
+        {!catalogError && !catalogLoading && !visibleProducts.length && <p className="catalog-state">No active products matched that search.</p>}
+        <div className="cards">{visibleProducts.map(product => {
+          const variants = [...(product.variants || [])].sort((a, b) => {
+            const aSize = SIZE_OPTIONS.indexOf(a.size); const bSize = SIZE_OPTIONS.indexOf(b.size);
+            return a.color.localeCompare(b.color) || (aSize < 0 ? 99 : aSize) - (bSize < 0 ? 99 : bSize);
+          });
+          const oneColor = variants.length > 0 && variants.every(variant => variant.color === variants[0].color);
+          const onePrice = variants.length > 0 && variants.every(variant => variant.priceCents === variants[0].priceCents);
+          const photo = productImages[product.id] || productPhoto(product.name);
+          return <article className="product-card" key={product.id}>
+          <div className={photo ? 'product-art photo' : 'product-art'}>{photo ? <img src={photo} alt="" loading="lazy" /> : product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}<label className="product-image-input" aria-label={photo ? 'Change product image' : 'Add product image'} title={photo ? 'Change product image' : 'Add product image'}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m4 17 4.5-4.5 3 3 2.5-2.5L20 17" /></svg><input type="file" accept="image/*" onChange={event => saveProductImage(product.id, event)} /></label></div>
+          <div className="product-info"><div><h3>{product.name}</h3><p>{oneColor ? `${variants[0].color} · ${product.stock} pieces${variants.length > 1 ? ' across sizes' : ''}` : `${product.stock} pieces across variants`}</p></div>{onePrice && <strong>{money(variants[0].priceCents)}</strong>}</div>
+          <div className="sizes" role="group" aria-label={`Variants for ${product.name}`}>{variants.map(variant => <button key={variant.id} disabled={!variant.stock || loading} title={`${variant.size} / ${variant.color} · ${variant.stock} available · ${money(variant.priceCents)}`} onClick={() => add(product, variant)} className={variant.stock <= variant.reorderPoint ? 'low' : ''}><b>{variant.size}{oneColor ? '' : ` · ${variant.color}`}</b><small>{variant.stock ? `${variant.stock} left` : 'Out of stock'}{onePrice ? '' : ` · ${money(variant.priceCents)}`}</small></button>)}</div>
+        </article>;
+        })}</div>
+      </section>
+      <aside className="cart" ref={cartRef} aria-label="Current order">
+        <div className="cart-title"><div><p className="eyebrow">Current order</p><h2>Cart <span>{cart.reduce((sum, line) => sum + line.quantity, 0)}</span></h2></div><button className="clear" onClick={() => { setCart([]); setCashReceived(''); }} disabled={!cart.length || loading}>Clear cart</button></div>
+        <div className="cart-lines">{cart.length ? cart.map(line => <div className="line" key={line.variant.id}>
+          <div className="line-art">{productImages[line.product.id] || productPhoto(line.product.name) ? <img src={productImages[line.product.id] || productPhoto(line.product.name)} alt="" /> : line.product.name[0]}</div>
+          <div className="line-main"><b>{line.product.name}</b><small>{line.variant.size} / {line.variant.color} · {money(line.variant.priceCents)} each</small>
+            <div className="line-controls"><button type="button" disabled={loading || line.quantity === 1} onClick={() => updateLine(line.variant.id, { quantity: line.quantity - 1 })} aria-label={`Decrease ${line.product.name} ${line.variant.size} ${line.variant.color}`}>−</button><span aria-label={`Quantity ${line.quantity}`}>{line.quantity}</span><button type="button" disabled={loading || line.quantity >= line.variant.stock} onClick={() => updateLine(line.variant.id, { quantity: line.quantity + 1 })} aria-label={`Increase ${line.product.name} ${line.variant.size} ${line.variant.color}`}>+</button><button type="button" className="line-remove" disabled={loading} onClick={() => { setCart(lines => lines.filter(item => item.variant.id !== line.variant.id)); if (cart.length === 1) setCashReceived(''); }} aria-label={`Remove ${line.product.name} ${line.variant.size} ${line.variant.color}`}>Remove</button></div>
+            <details className="line-discount"><summary>Discount{line.discountCents ? ` · −${money(line.discountCents)}` : ''}</summary><DiscountEditor line={line} disabled={loading} onChange={discountCents => updateLine(line.variant.id, { discountCents })} /></details>
+          </div><b className="line-total">{money(line.variant.priceCents * line.quantity - line.discountCents)}</b>
+        </div>) : <div className="empty"><span aria-hidden="true">⌁</span><b>Your cart is empty</b><p>Scan a barcode or choose a size and color to begin.</p></div>}</div>
+        <div className="totals"><div><span>Subtotal</span><b>{money(totals.subtotal)}</b></div><div><span>Item discounts</span><b className="orange">−{money(totals.discount)}</b></div><div className="grand"><span>Total due</span><b>{money(totals.total)}</b></div>
+          <div className="cash-entry"><label htmlFor="cash-received">Cash received</label><div><span aria-hidden="true">₱</span><input id="cash-received" inputMode="decimal" type="text" autoComplete="off" placeholder="0.00" value={cashReceived} onChange={event => setCashReceived(event.target.value)} disabled={!cart.length || loading} /><button type="button" className="secondary" disabled={!cart.length || loading} onClick={() => setCashReceived((totals.total / 100).toFixed(2))}>Exact</button></div></div>
+          {cashReceived && !canPay && <p className="cash-hint" role="status">{cashCents === null ? 'Enter a valid amount with up to two decimals.' : `Still due: ${money(totals.total - cashCents)}`}</p>}
+          {canPay && <div className="change-due" role="status"><span>Change to give</span><b>{money(cashCents - totals.total)}</b></div>}
+          <button className="checkout" disabled={!cart.length || !canPay || loading} onClick={checkout}>{loading ? 'Processing…' : `Complete cash sale · ${money(totals.total)}`}</button>
+        </div>
+      </aside>
+    </div>
+    {!!cart.length && <button type="button" className="mobile-cart-link" onClick={() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>View cart · {money(totals.total)}</button>}
+    {receipt && <div ref={receiptRef}><Receipt receipt={receipt} onClose={() => { setReceipt(null); searchRef.current?.focus(); }} /></div>}
+    {cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}
+    {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}
+  </>;
 }
 
 function ProductDetailsDialog({ product, onClose, onAdd }) {
