@@ -22,6 +22,8 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
 .login-card p { color:var(--muted); font-size:14px }
 .login-card .field { color:var(--navy) }
 .login-card .field input { height:46px }
+.remember-field { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; cursor:pointer }
+.remember-field input { width:16px; height:16px; margin:0; accent-color:var(--orange) }
 .signout { display:block; width:100%; margin-top:12px; border:1px solid #6e8299; border-radius:8px; background:transparent; color:#fff; padding:8px; text-align:left }
 .login-link,.reset-link { display:block; width:100%; text-align:center; text-decoration:none }
 @media (max-width:760px) { .signout { position:fixed; right:14px; top:12px; z-index:5; width:auto; background:var(--navy); margin:0 } }
@@ -114,6 +116,9 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
   .product-detail-dialog dl { grid-template-columns:repeat(2,1fr) }
 }
 @media (max-width:430px) { .detail-variants,.product-detail-dialog dl { grid-template-columns:1fr }.metric-grid { grid-template-columns:1fr 1fr }.metric-grid b { font-size:20px } }
+
+/* MFA security settings */
+.security-panel { max-width:760px }.security-content { padding:20px; display:grid; gap:16px }.security-content form,.security-setup { display:grid; gap:13px; max-width:520px }.security-content p { color:var(--muted); font-size:13px; line-height:1.5 }.security-muted { font-size:12px!important }.security-secret { display:block; padding:12px; overflow-wrap:anywhere; background:#f9f5ef; border:1px solid var(--line); border-radius:8px; color:var(--navy); letter-spacing:1px }.security-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px }.security-actions .checkout { width:auto; padding-inline:16px }.recovery-code-box { padding:16px; border:1px solid #f6c4a9; border-radius:10px; background:#fff8f2 }.recovery-code-box h3 { font-size:14px; margin-bottom:6px }.recovery-codes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:0; margin:14px 0 0; list-style:none }.recovery-codes li { padding:9px; background:#fff; border:1px solid var(--line); border-radius:6px; text-align:center }.recovery-codes code { letter-spacing:1px; color:var(--navy); font-weight:700 }
 
 /* Discount editor */
 .discount-editor { min-width:145px; display:grid; gap:5px; margin-left:5px }

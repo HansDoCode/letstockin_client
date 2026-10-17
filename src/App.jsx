@@ -3,6 +3,7 @@ import { api } from './api.js';
 import InventoryPanel from './InventoryPanel.jsx';
 import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
 import ProductPanel from './ProductPanel.jsx';
+import SecurityPanel from './SecurityPanel.jsx';
 import CameraScanner from './CameraScanner.jsx';
 import { parseCashCents } from './pos-money.js';
 import { SIZE_OPTIONS } from './product-variants.js';
@@ -10,7 +11,7 @@ import { SIZE_OPTIONS } from './product-variants.js';
 const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
 const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
 const productImageStorageKey = 'letstockin:product-images';
-const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team']];
+const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team'], ['security', 'S', 'Security']];
 
 function handleDialogKeys(event, container, onClose) {
   if (event.key === 'Escape') { event.stopPropagation(); onClose(); return; }
@@ -55,7 +56,7 @@ export default function App() {
   if (checking) return <main className="login-page"><p>Checking session…</p></main>;
   if (!user) return <Login onLogin={setUser} />;
 
-  const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory');
+  const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory' || id === 'security');
   function openInventory(alert) { setInventoryQuery(alert.name); setView('inventory'); setAlertsOpen(false); }
   async function signOut() { await api.logout(); setUser(null); setAlerts([]); setView('pos'); }
 
@@ -68,6 +69,7 @@ export default function App() {
       {user.role === 'admin' && view === 'products' && <ProductPanel onStockChanged={loadAlerts} />}
       {user.role === 'admin' && view === 'reports' && <ReportsPanel />}
       {user.role === 'admin' && view === 'team' && <TeamPanel />}
+      {view === 'security' && <SecurityPanel />}
       {alertsOpen && <NotificationPanel alerts={alerts} error={alertsError} role={user.role} onClose={() => setAlertsOpen(false)} onOpenInventory={openInventory} onRefresh={loadAlerts} />}
     </section>
   </main>;
@@ -88,10 +90,17 @@ function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRe
 }
 
 function Login({ onLogin }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false);
-  async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { onLogin(await api.login({ email, password })); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
+  async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } onLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
+  if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={onLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><div className="brand"><span>LS</span> Letstockin</div><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><div className="brand"><span>LS</span> Letstockin</div><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me on this device</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+}
+
+function MfaLogin({ challenge, remember, onLogin, onBack }) {
+  const [code, setCode] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { onLogin(await api.verifyMfa({ challenge, code, remember })); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><div className="brand"><span>LS</span> Letstockin</div><h1>Two-step verification</h1><p>Enter the code from your authenticator app, or use a recovery code.</p><label className="field">Verification code<input required autoFocus autoComplete="one-time-code" value={code} onChange={event => setCode(event.target.value)} /></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Verifying…' : 'Verify and sign in'}</button><button type="button" className="secondary login-link" onClick={onBack}>Back to password</button></form></main>;
 }
 
 function PasswordResetRequest({ onBack }) {
