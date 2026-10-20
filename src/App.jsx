@@ -101,15 +101,22 @@ function RemoteScannerPage({ token }) {
   const [scanKey, setScanKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [paired, setPaired] = useState(true);
+  const [cooldown, setCooldown] = useState(false);
   const [notice, setNotice] = useState('Ready to scan for the computer.');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!cooldown) return undefined;
+    const timer = window.setTimeout(() => { setCooldown(false); setScanKey(current => current + 1); setCameraOpen(true); }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
 
   async function detected(code) {
     setCameraOpen(false); setBusy(true); setError('');
     try {
       await api.remoteScannerScan(token, code);
-      setNotice('Scan sent to the computer.');
-      setScanKey(current => current + 1); setCameraOpen(true);
+      setNotice('Scan sent. Move to the next item…');
+      setCooldown(true);
     } catch (cause) {
       setError(cause.message || 'The scan could not be sent.');
       if (cause.status === 404) setPaired(false);
@@ -119,7 +126,7 @@ function RemoteScannerPage({ token }) {
 
   function openCamera() { setError(''); setScanKey(current => current + 1); setCameraOpen(true); }
 
-  return <main className="remote-scanner-page"><section className="remote-scanner-card"><Brand /><h1>Phone scanner</h1><p>Keep this page open while the computer is taking the order. Each barcode scan is sent to its cart.</p>{notice && <p className="form-notice" role="status">{notice}</p>}{error && <p className="form-notice" role="alert">{error}</p>}{busy && <p className="remote-scanner-status">Sending scan…</p>}{!paired ? <button className="checkout" onClick={() => { window.location.href = window.location.pathname; }}>Return to app</button> : !cameraOpen && <button className="checkout" onClick={openCamera}>Start camera</button>}{paired && cameraOpen && <CameraScanner key={scanKey} onClose={() => setCameraOpen(false)} onDetected={detected} />}</section></main>;
+  return <main className="remote-scanner-page"><section className="remote-scanner-card"><Brand /><h1>Phone scanner</h1><p>Keep this page open while the computer is taking the order. Each barcode scan is sent to its cart.</p>{notice && <p className="form-notice" role="status">{notice}</p>}{error && <p className="form-notice" role="alert">{error}</p>}{busy && <p className="remote-scanner-status">Sending scan…</p>}{cooldown && <p className="remote-scanner-status">Wait a moment before the next scan…</p>}{!paired ? <button className="checkout" onClick={() => { window.location.href = window.location.pathname; }}>Return to app</button> : !cameraOpen && !busy && !cooldown && <button className="checkout" onClick={openCamera}>Start camera</button>}{paired && cameraOpen && <CameraScanner key={scanKey} onClose={() => setCameraOpen(false)} onDetected={detected} />}</section></main>;
 }
 
 function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRefresh }) {
