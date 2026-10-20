@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { api } from './api.js';
 import InventoryPanel from './InventoryPanel.jsx';
 import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
@@ -39,11 +40,15 @@ export default function App() {
   const [inventoryQuery, setInventoryQuery] = useState('');
   const [navOpen, setNavOpen] = useState(false);
   const resetRoute = window.location.pathname === '/reset-password';
+  const remoteScannerToken = useMemo(() => {
+    const token = new URLSearchParams(window.location.search).get('remoteScanner') || '';
+    return /^[a-f0-9]{64}$/.test(token) ? token : '';
+  }, []);
 
   useEffect(() => {
-    if (resetRoute) { setChecking(false); return; }
+    if (resetRoute || remoteScannerToken) { setChecking(false); return; }
     api.me().then(setUser).catch(() => {}).finally(() => setChecking(false));
-  }, [resetRoute]);
+  }, [resetRoute, remoteScannerToken]);
 
   const loadAlerts = useCallback(async () => {
     if (!user) return;
@@ -66,6 +71,7 @@ export default function App() {
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [navOpen]);
 
+  if (remoteScannerToken) return <RemoteScannerPage token={remoteScannerToken} />;
   if (resetRoute) return <PasswordResetPage />;
   if (checking) return <main className="login-page"><p>Checking session…</p></main>;
   if (!user) return <Login onLogin={setUser} />;
@@ -88,6 +94,32 @@ export default function App() {
       {alertsOpen && <NotificationPanel alerts={alerts} error={alertsError} role={user.role} onClose={() => setAlertsOpen(false)} onOpenInventory={openInventory} onRefresh={loadAlerts} />}
     </section>
   </main>;
+}
+
+function RemoteScannerPage({ token }) {
+  const [cameraOpen, setCameraOpen] = useState(true);
+  const [scanKey, setScanKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [paired, setPaired] = useState(true);
+  const [notice, setNotice] = useState('Ready to scan for the computer.');
+  const [error, setError] = useState('');
+
+  async function detected(code) {
+    setCameraOpen(false); setBusy(true); setError('');
+    try {
+      await api.remoteScannerScan(token, code);
+      setNotice('Scan sent to the computer.');
+      setScanKey(current => current + 1); setCameraOpen(true);
+    } catch (cause) {
+      setError(cause.message || 'The scan could not be sent.');
+      if (cause.status === 404) setPaired(false);
+      else { setScanKey(current => current + 1); setCameraOpen(true); }
+    } finally { setBusy(false); }
+  }
+
+  function openCamera() { setError(''); setScanKey(current => current + 1); setCameraOpen(true); }
+
+  return <main className="remote-scanner-page"><section className="remote-scanner-card"><Brand /><h1>Phone scanner</h1><p>Keep this page open while the computer is taking the order. Each barcode scan is sent to its cart.</p>{notice && <p className="form-notice" role="status">{notice}</p>}{error && <p className="form-notice" role="alert">{error}</p>}{busy && <p className="remote-scanner-status">Sending scan…</p>}{!paired ? <button className="checkout" onClick={() => { window.location.href = window.location.pathname; }}>Return to app</button> : !cameraOpen && <button className="checkout" onClick={openCamera}>Start camera</button>}{paired && cameraOpen && <CameraScanner key={scanKey} onClose={() => setCameraOpen(false)} onDetected={detected} />}</section></main>;
 }
 
 function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRefresh }) {
@@ -155,10 +187,10 @@ function DiscountEditor({ line, onChange, disabled = false }) {
 }
 
 function PosPanel({ onStockChanged }) {
-  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null);
+  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSession, setRemoteSession] = useState(null); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false);
   const [productImages, setProductImages] = useState(() => { try { const saved = JSON.parse(window.localStorage.getItem(productImageStorageKey) || '{}'); return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}; } catch { return {}; } });
   const [cashReceived, setCashReceived] = useState('');
-  const searchRef = useRef(null); const cartRef = useRef(null); const receiptRef = useRef(null);
+  const searchRef = useRef(null); const cartRef = useRef(null); const receiptRef = useRef(null); const remoteCursorRef = useRef(0); const resolveCodeRef = useRef(null);
   useEffect(() => { if (receipt) receiptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [receipt]);
   useEffect(() => {
     let current = true;
@@ -197,7 +229,49 @@ function PosPanel({ onStockChanged }) {
       else add({ id: result.productId, name: result.name }, { ...matched, stock: matched.quantity }, true);
     } catch (error) { setNotice(error.message || 'No product matched that barcode or QR code.'); }
   }
+  resolveCodeRef.current = resolveCode;
+  useEffect(() => {
+    if (!remoteSession) return undefined;
+    let active = true;
+    let polling = false;
+    async function pollRemoteScans() {
+      if (!active || polling) return;
+      polling = true;
+      try {
+        const result = await api.remoteScannerScans(remoteSession.token, remoteCursorRef.current);
+        for (const scan of result.scans) {
+          if (!active) break;
+          remoteCursorRef.current = Number(scan.id);
+          await resolveCodeRef.current(scan.code);
+        }
+      } catch (error) {
+        if (active && error.status === 404) { setRemoteSession(null); setRemoteDialogOpen(false); setNotice('Phone pairing expired.'); }
+      } finally { polling = false; }
+    }
+    pollRemoteScans();
+    // shortcut: 700 ms polling, replace with a push channel if scan volume or latency requires it.
+    const timer = window.setInterval(pollRemoteScans, 700);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [remoteSession]);
   function scan(event) { if (event.key !== 'Enter' || !event.currentTarget.value.trim() || loading) return; event.preventDefault(); const code = event.currentTarget.value.trim(); setQuery(''); resolveCode(code); }
+  async function pairPhone() {
+    if (remotePairBusy) return;
+    setRemotePairBusy(true); setNotice('');
+    try {
+      const session = await api.createRemoteScanner();
+      const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('remoteScanner', session.token);
+      remoteCursorRef.current = 0;
+      setRemoteSession({ ...session, url: url.toString() }); setRemoteDialogOpen(true);
+    } catch (error) { setNotice(error.message || 'Phone pairing could not start.'); }
+    finally { setRemotePairBusy(false); }
+  }
+  async function stopRemoteScanner() {
+    const session = remoteSession;
+    setRemoteSession(null); setRemoteDialogOpen(false);
+    if (!session) return;
+    try { await api.closeRemoteScanner(session.token); setNotice('Phone pairing stopped.'); }
+    catch (error) { setNotice(error.message || 'Phone pairing could not be stopped.'); }
+  }
   function closeCamera() { setCameraOpen(false); requestAnimationFrame(() => document.querySelector('.camera-trigger')?.focus()); }
   function saveProductImage(productId, event) {
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = '';
@@ -238,7 +312,7 @@ function PosPanel({ onStockChanged }) {
       <section className="catalog">
         <div className="search"><span aria-hidden="true">⌕</span><input ref={searchRef} autoFocus aria-label="Search products or scan a code" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={scan} placeholder="Search products or scan a code…" disabled={loading} /><button type="button" className="search-clear" onClick={() => { setQuery(''); searchRef.current?.focus(); }} disabled={!query || loading} aria-label="Clear search">×</button><kbd>Enter to scan</kbd></div>
         <div className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div>
-        <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><button className="scan" disabled={loading} onClick={() => searchRef.current?.focus()}>⌁ Scan code</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Use camera</button></div>
+        <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><button className="scan" disabled={loading || remotePairBusy} onClick={() => remoteSession ? setRemoteDialogOpen(true) : pairPhone()}>{remoteSession ? 'Show phone' : remotePairBusy ? 'Pairing…' : 'Pair phone'}</button><button className="scan" disabled={loading} onClick={() => searchRef.current?.focus()}>⌁ Scan code</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Use camera</button></div>
         {catalogError && <p className="form-notice" role="alert">{catalogError}</p>}
         {!catalogError && catalogLoading && <p className="catalog-state" role="status">Loading products…</p>}
         {!catalogError && !catalogLoading && !visibleProducts.length && <p className="catalog-state">No active products matched that search.</p>}
@@ -276,7 +350,21 @@ function PosPanel({ onStockChanged }) {
     {receipt && <div ref={receiptRef}><Receipt receipt={receipt} onClose={() => { setReceipt(null); searchRef.current?.focus(); }} /></div>}
     {cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}
     {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}
+    {remoteSession && remoteDialogOpen && <RemoteScannerDialog session={remoteSession} onClose={() => setRemoteDialogOpen(false)} onStop={stopRemoteScanner} />}
   </>;
+}
+
+function RemoteScannerDialog({ session, onClose, onStop }) {
+  const closeRef = useRef(null); const dialogRef = useRef(null); const [qrCode, setQrCode] = useState('');
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(session.url, { errorCorrectionLevel: 'M', margin: 2, width: 240 })
+      .then(dataUrl => { if (active) setQrCode(dataUrl); })
+      .catch(() => { if (active) setQrCode(''); });
+    closeRef.current?.focus();
+    return () => { active = false; };
+  }, [session.url]);
+  return <div className="remote-scanner-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="remote-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-scanner-title"><div className="camera-head"><div><h2 id="remote-scanner-title">Pair phone scanner</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><p>Open your phone camera and scan this code. Keep the phone page open while you scan products.</p>{qrCode ? <img className="remote-scanner-qr" src={qrCode} alt="Phone scanner pairing QR code" /> : <p className="form-notice" role="alert">Pairing QR code could not be generated. Use the link below.</p>}<code className="remote-scanner-link">{session.url}</code><p className="remote-scanner-expiry">This pairing expires in 10 minutes.</p><div className="remote-scanner-actions"><button className="secondary" onClick={onStop}>Stop pairing</button><button className="checkout" onClick={onClose}>Done</button></div></section></div>;
 }
 
 function ProductDetailsDialog({ product, onClose, onAdd }) {
