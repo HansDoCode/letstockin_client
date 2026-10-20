@@ -97,9 +97,9 @@ export default function ProductPanel({ onStockChanged }) {
   }
 
   return <>
-    <section className="admin-heading"><p className="eyebrow">Catalog management</p><h1>Add a product</h1><p>For one color and price, choose its sizes and enter the pieces available for each. Each size gets its own stock and scan codes.</p></section>
+    <section className="admin-heading"><h1>Add a product</h1></section>
     {editingProduct && <form className="product-form product-edit-form" onSubmit={saveEdit}>
-      <div className="variant-head"><div><p className="eyebrow">Existing product</p><h2>Update {editingProduct.name}</h2></div><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div>
+      <div className="variant-head"><div><h2>Update {editingProduct.name}</h2></div><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div>
       <p className="edit-note">Set the absolute stock, color, and price for each size. Stock differences are recorded in the inventory audit trail.</p>
       <div className="edit-variants">{editVariants.map(variant => <fieldset key={variant.id}><legend>{variant.size}</legend><label className="field">Color<input required maxLength={50} value={variant.color} onChange={event => updateEditVariant(variant.id, 'color', event.target.value)} /></label><label className="field">Price (₱)<input required min="0" step="0.01" type="number" value={variant.price} onChange={event => updateEditVariant(variant.id, 'price', event.target.value)} /></label><label className="field">Pieces in stock<input required min="0" step="1" type="number" value={variant.quantity} onChange={event => updateEditVariant(variant.id, 'quantity', event.target.value)} /></label></fieldset>)}</div>
       <label className="field edit-reason">Reason for update<input required maxLength={500} value={editReason} onChange={event => setEditReason(event.target.value)} /></label>

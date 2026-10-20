@@ -58,7 +58,7 @@ export default function CameraScanner({ onDetected, onClose }) {
 
   return <div className="camera-overlay" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeRef.current(); } if (event.key === 'Tab') { event.preventDefault(); closeButtonRef.current?.focus(); } }}>
     <section className="camera-dialog" role="dialog" aria-modal="true" aria-labelledby="camera-title">
-      <div className="camera-head"><div><p className="eyebrow">Barcode / QR</p><h2 id="camera-title">Scan a product</h2></div><button ref={closeButtonRef} className="secondary" onClick={onClose}>Close</button></div>
+      <div className="camera-head"><div><h2 id="camera-title">Scan a product</h2></div><button ref={closeButtonRef} className="secondary" onClick={onClose}>Close</button></div>
       <video ref={videoRef} muted playsInline aria-label="Camera preview" />
       {error ? <p className="form-notice" role="alert">{error}</p> : <p>Point the camera at a product barcode or QR code.</p>}
     </section>

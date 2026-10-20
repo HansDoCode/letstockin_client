@@ -39,6 +39,7 @@ export const api = {
   updateProductVariants: (id, data) => request(`/products/${encodeURIComponent(id)}/variants`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProduct: (id) => request(`/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   adjustInventory: (variantId, data) => request(`/inventory/${variantId}/adjustments`, { method: 'POST', body: JSON.stringify(data) }),
+  generateBarcode: (variantId) => request(`/inventory/${encodeURIComponent(variantId)}/barcode`, { method: 'POST' }),
   lookup: (code) => request(`/products/lookup/${encodeURIComponent(code)}`),
   checkout: (data) => request('/sales', { method: 'POST', body: JSON.stringify(data) }),
   receipt: (id) => request(`/sales/${encodeURIComponent(id)}/receipt`),

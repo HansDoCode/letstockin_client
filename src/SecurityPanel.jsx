@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { api } from './api.js';
 
 export default function SecurityPanel() {
   const [status, setStatus] = useState(null);
   const [setup, setSetup] = useState(null);
+  const [qrCode, setQrCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -20,6 +22,16 @@ export default function SecurityPanel() {
   }
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    let active = true;
+    setQrCode('');
+    if (!setup?.otpauthUrl) return () => { active = false; };
+    QRCode.toDataURL(setup.otpauthUrl, { errorCorrectionLevel: 'M', margin: 2, width: 240 })
+      .then(dataUrl => { if (active) setQrCode(dataUrl); })
+      .catch(() => { if (active) setError('QR code could not be generated. Use the manual setup secret instead.'); });
+    return () => { active = false; };
+  }, [setup?.otpauthUrl]);
 
   async function startSetup(event) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
@@ -62,7 +74,7 @@ export default function SecurityPanel() {
 
   if (loading) return <section className="data-panel security-panel"><h2>Security</h2><div className="security-content"><p>Loading security settings…</p></div></section>;
   return <>
-    <section className="admin-heading"><p className="eyebrow">Account protection</p><h1>Security</h1><p>Use an authenticator app as a second factor when signing in.</p></section>
+    <section className="admin-heading"><h1>Security</h1></section>
     <section className="data-panel security-panel">
       <h2>Authenticator app</h2>
       <div className="security-content">
@@ -74,7 +86,8 @@ export default function SecurityPanel() {
           <button className="checkout" disabled={busy}>{busy ? 'Starting…' : 'Set up MFA'}</button>
         </form>}
         {setup && <div className="security-setup">
-          <p>Open an authenticator app, add a new account, and enter this secret manually:</p>
+          <p>Scan this code with your authenticator app, or enter the secret manually:</p>
+          {qrCode && <img className="security-qr" src={qrCode} alt="MFA setup QR code" />}
           <code className="security-secret">{setup.secret}</code>
           <label className="field">Authenticator setup URI<input readOnly value={setup.otpauthUrl} onFocus={event => event.target.select()} /></label>
           <form onSubmit={confirmSetup}>
