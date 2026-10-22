@@ -6,6 +6,7 @@ import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
 import ProductPanel from './ProductPanel.jsx';
 import SecurityPanel from './SecurityPanel.jsx';
 import CameraScanner from './CameraScanner.jsx';
+import { code128Bars } from './barcode.js';
 import { parseCashCents } from './pos-money.js';
 import { normalizeProductDetails } from './product-details.js';
 import { SIZE_OPTIONS } from './product-variants.js';
@@ -14,7 +15,25 @@ const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', curre
 const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
 const logoPath = `${import.meta.env.BASE_URL}images/letstockin-logo.png`;
 const productImageStorageKey = 'letstockin:product-images';
-const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['low-stock', '📉', 'Low stock'], ['team', '◉', 'Team'], ['security', 'S', 'Security']];
+const remoteScannerStorageKey = 'letstockin:remote-scanner-sessions';
+const validRemoteScannerToken = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+function remoteScannerUrl(token) {
+  const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('remoteScanner', token); return url.toString();
+}
+function loadRemoteScannerSessions() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(remoteScannerStorageKey) || '[]');
+    if (!Array.isArray(saved)) return [];
+    return saved.filter(session => session && validRemoteScannerToken(session.token)).slice(0, 2).map(session => {
+      const cursor = Number(session.cursor);
+      return { token: session.token, cursor: Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0, url: remoteScannerUrl(session.token) };
+    });
+  } catch { return []; }
+}
+function saveRemoteScannerSessions(sessions, cursors) {
+  try { window.localStorage.setItem(remoteScannerStorageKey, JSON.stringify(sessions.map(session => ({ token: session.token, cursor: cursors.get(session.token) ?? session.cursor ?? 0 })))); } catch {}
+}
+const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team'], ['security', 'S', 'Security']];
 
 function Brand() {
   return <div className="brand"><img className="brand-logo" src={logoPath} alt="" /><span className="brand-name">Letstockin</span></div>;
@@ -76,16 +95,16 @@ export default function App() {
   if (checking) return <main className="login-page"><p>Checking session…</p></main>;
   if (!user) return <Login onLogin={setUser} />;
 
-  const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory' || id === 'low-stock' || id === 'security');
+  const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory' || id === 'security');
   function openInventory(alert) { setInventoryQuery(alert.name); setView('inventory'); setAlertsOpen(false); setNavOpen(false); }
   async function signOut() { await api.logout(); setUser(null); setAlerts([]); setView('pos'); setNavOpen(false); }
 
   return <main className="shell">
-    <aside id="main-navigation" className={navOpen ? 'sidebar open' : 'sidebar'}><Brand /><nav>{allowed.map(([id, icon, label]) => <button type="button" key={id} className={alertsOpen && id === 'low-stock' || view === id ? 'active' : ''} aria-expanded={id === 'low-stock' ? alertsOpen : undefined} aria-label={id === 'low-stock' ? `${alerts.length} low-stock notifications` : undefined} onClick={() => { if (id === 'low-stock') { setAlertsOpen(open => !open); setNavOpen(false); } else { setView(id); setNavOpen(false); setAlertsOpen(false); } }}><i>{icon}</i><b>{label}{id === 'low-stock' && alerts.length > 0 && <span className="notification-nav-count">{alerts.length > 99 ? '99+' : alerts.length}</span>}</b></button>)}</nav><div className="profile">{user.name}<br/><small>{user.role} account</small><button className="signout" onClick={signOut}>Sign out</button></div></aside>
+    <aside id="main-navigation" className={navOpen ? 'sidebar open' : 'sidebar'}><Brand /><nav>{allowed.map(([id, icon, label]) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => { setView(id); setNavOpen(false); setAlertsOpen(false); }}><i>{icon}</i><b>{label}</b></button>)}</nav><div className="profile">{user.name}<br/><small>{user.role} account</small><button className="signout" onClick={signOut}>Sign out</button></div></aside>
     <button type="button" className={navOpen ? 'nav-toggle icon open' : 'nav-toggle icon'} aria-label={navOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={navOpen} aria-controls="main-navigation" onClick={() => { setNavOpen(open => !open); setAlertsOpen(false); }}>{navOpen ? '×' : '☰'}</button>
     {navOpen && <button type="button" className="nav-scrim" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
     <section className="workspace">
-      {view === 'pos' && <PosPanel onStockChanged={loadAlerts} />}
+      {view === 'pos' && <PosPanel onStockChanged={loadAlerts} lowStockCount={alerts.length} alertsOpen={alertsOpen} onOpenLowStock={() => setAlertsOpen(true)} />}
       {view === 'inventory' && <InventoryPanel role={user.role} initialQuery={inventoryQuery} onStockChanged={loadAlerts} />}
       {user.role === 'admin' && view === 'products' && <ProductPanel onStockChanged={loadAlerts} />}
       {user.role === 'admin' && view === 'reports' && <ReportsPanel />}
@@ -171,8 +190,28 @@ function PasswordResetPage() {
   return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Choose a new password</h1><p>Use at least 12 characters. This link can only be used once.</p><label className="field">New password<input required minLength="12" maxLength="256" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="field">Confirm password<input required minLength="12" maxLength="256" type="password" autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button></form></main>;
 }
 
-function Receipt({ receipt, onClose }) {
-  return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}><div className="receipt-head"><div><h2>Receipt #{receipt.id}</h2></div><button className="secondary" onClick={onClose}>Close</button></div><p>{new Date(receipt.createdAt).toLocaleString()} · {receipt.staffName} · Cash recorded</p><div className="receipt-lines">{receipt.items.map(item => <div key={item.id}><span>{item.name} · {item.size} / {item.color} × {item.quantity}{item.discountCents ? ` · Discount ${money(item.discountCents)}` : ''}</span><b>{money(item.totalCents)}</b></div>)}</div><div className="receipt-total"><span>Total paid</span><b>{money(receipt.totalCents)}</b></div>{receipt.cashReceivedCents != null && <div className="receipt-cash"><div><span>Cash received</span><b>{money(receipt.cashReceivedCents)}</b></div><div><span>{receipt.cashReceivedCents >= receipt.totalCents ? 'Change to give' : 'Cash short'}</span><b>{money(Math.abs(receipt.cashReceivedCents - receipt.totalCents))}</b></div></div>}<button className="secondary" onClick={() => window.print()}>Print receipt</button></section>;
+function Receipt({ receipt }) {
+  const bars = code128Bars(`SALE-${receipt.id}`);
+  const barcodeWidth = bars.reduce((total, bar) => total + bar.width * 2, 0) + 24;
+  const receiptDate = new Date(receipt.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+  let barcodeX = 12;
+  return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}>
+    <div className="receipt-paper">
+      <div className="receipt-title"><h2>Cash Receipt</h2><p>Letstockin</p></div>
+      <div className="receipt-divider" />
+      <dl className="receipt-meta"><div><dt>Address:</dt><dd>—</dd></div><div><dt>Tel:</dt><dd>—</dd></div><div><dt>Date:</dt><dd>{receiptDate}</dd></div><div><dt>Manager:</dt><dd>{receipt.staffName}</dd></div></dl>
+      <div className="receipt-divider" />
+      <div className="receipt-lines" aria-label="Purchased items">{receipt.items.map(item => <div key={item.id}><span className="receipt-line-name"><strong>{item.name}</strong><small>{item.size} / {item.color} · {item.quantity} × {money(item.unitPriceCents)}{item.discountCents ? ` · Discount ${money(item.discountCents)}` : ''}</small></span><b>{money(item.totalCents)}</b></div>)}</div>
+      <div className="receipt-divider" />
+      <div className="receipt-summary"><div><span>Price</span><b>{money(receipt.subtotalCents)}</b></div><div><span>Sale</span><b>{receipt.discountCents ? `−${money(receipt.discountCents)}` : money(0)}</b></div><div><span>VAT</span><b>{money(0)}</b></div></div>
+      <div className="receipt-divider" />
+      <div className="receipt-total"><span>Total</span><b>{money(receipt.totalCents)}</b></div>
+      {receipt.cashReceivedCents != null && <div className="receipt-cash"><div><span>Cash received</span><b>{money(receipt.cashReceivedCents)}</b></div><div><span>{receipt.cashReceivedCents >= receipt.totalCents ? 'Change to give' : 'Cash short'}</span><b>{money(Math.abs(receipt.cashReceivedCents - receipt.totalCents))}</b></div></div>}
+      <div className="receipt-divider" />
+      <p className="receipt-thanks">Thank you!</p>
+      <svg className="receipt-barcode" width={barcodeWidth} height="64" viewBox={`0 0 ${barcodeWidth} 64`} role="img" aria-label={`Barcode for sale ${receipt.id}`} shapeRendering="crispEdges"><rect width={barcodeWidth} height="64" fill="#fff" />{bars.map((bar, index) => { const left = barcodeX; barcodeX += bar.width * 2; return bar.black ? <rect key={index} x={left} y="3" width={bar.width * 2} height="52" fill="#707070" /> : null; })}</svg>
+    </div>
+  </section>;
 }
 
 function DiscountEditor({ line, onChange, disabled = false }) {
@@ -187,18 +226,20 @@ function DiscountEditor({ line, onChange, disabled = false }) {
     setDraft(next ? (next / 100).toFixed(2) : '');
   }
   return <div className="discount-editor">
-    <div className="discount-head"><label htmlFor={`discount-${line.variant.id}`}>Discount</label><small>max {money(gross)}</small></div>
+    <div className="discount-head"><label htmlFor={`discount-${line.variant.id}`}>Discount</label></div>
     <div className="discount-entry"><span aria-hidden="true">PHP</span><input id={`discount-${line.variant.id}`} aria-label="Discount amount in Philippine pesos" inputMode="decimal" type="number" min="0" max={(gross / 100).toFixed(2)} step="0.01" value={draft} placeholder="0.00" disabled={disabled} onChange={event => setDraft(event.target.value)} onBlur={() => commit(draft)} />{line.discountCents > 0 && <button type="button" className="discount-clear" disabled={disabled} onClick={() => { onChange(0); setDraft(''); }}>Clear</button>}</div>
     <div className="discount-presets" aria-label="Quick discount"><span>Quick</span>{[10, 20, 50].map(percent => <button type="button" key={percent} disabled={disabled} onClick={() => onChange(Math.round(gross * percent / 100))}>{percent}%</button>)}</div>
   </div>;
 }
 
-function PosPanel({ onStockChanged }) {
-  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSession, setRemoteSession] = useState(null); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false);
+function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock }) {
+  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSessions, setRemoteSessions] = useState(loadRemoteScannerSessions); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [productImages, setProductImages] = useState(() => { try { const saved = JSON.parse(window.localStorage.getItem(productImageStorageKey) || '{}'); return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}; } catch { return {}; } });
   const [cashReceived, setCashReceived] = useState('');
-  const searchRef = useRef(null); const cartRef = useRef(null); const receiptRef = useRef(null); const remoteCursorRef = useRef(0); const resolveCodeRef = useRef(null);
-  useEffect(() => { if (receipt) receiptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [receipt]);
+  const searchRef = useRef(null); const cartRef = useRef(null); const remoteSessionsRef = useRef(remoteSessions); const remoteCursorsRef = useRef(new Map(remoteSessions.map(session => [session.token, session.cursor]))); const resolveCodeRef = useRef(null);
+  function updateRemoteSessions(next) { remoteSessionsRef.current = next; setRemoteSessions(next); saveRemoteScannerSessions(next, remoteCursorsRef.current); }
+  function removeRemoteSession(token) { remoteCursorsRef.current.delete(token); const next = remoteSessionsRef.current.filter(session => session.token !== token); updateRemoteSessions(next); if (!next.length) setRemoteDialogOpen(false); }
   useEffect(() => {
     let current = true;
     const timer = window.setTimeout(async () => { if (current) setCatalogLoading(true); try { const result = await api.products(query); if (current) { setProducts(result); setCatalogError(''); } } catch (cause) { if (current) { setProducts([]); setCatalogError(cause.message || 'Products could not be loaded.'); } } finally { if (current) setCatalogLoading(false); } }, 220);
@@ -213,10 +254,16 @@ function PosPanel({ onStockChanged }) {
   const totals = useMemo(() => { const subtotal = cart.reduce((sum, line) => sum + line.variant.priceCents * line.quantity, 0); const discount = cart.reduce((sum, line) => sum + Math.min(line.discountCents, line.variant.priceCents * line.quantity), 0); return { subtotal, discount, total: subtotal - discount }; }, [cart]);
   const cashCents = parseCashCents(cashReceived);
   const canPay = Number.isSafeInteger(cashCents) && cashCents >= totals.total;
+  const canPrintReceipt = Boolean(receipt && notice.startsWith(`Sale #${receipt.id} completed.`));
+  useEffect(() => {
+    if (!receipt) return undefined;
+    const timer = window.setTimeout(() => window.print(), 0);
+    return () => window.clearTimeout(timer);
+  }, [receipt]);
 
   function openProductDetails(product, variants) {
     if (!variants.length) return;
-    setQrProduct(normalizeProductDetails({ ...product, variants }));
+    setQrProduct(normalizeProductDetails({ ...product, image: productImages[product.id] || productPhoto(product.name), variants }));
   }
 
   function add(product, variant, scanned = false) {
@@ -232,52 +279,55 @@ function PosPanel({ onStockChanged }) {
       const result = await api.lookup(code);
       const matched = result.variants.find(variant => String(variant.id) === String(result.matchedVariantId));
       if (!matched) throw new Error('The matched product variant is unavailable.');
-      if (result.identifierType === 'qr') { setQrProduct(normalizeProductDetails(result)); setNotice(`${result.name} product details opened.`); }
+       if (result.identifierType === 'qr') { setQrProduct(normalizeProductDetails({ ...result, image: productImages[result.productId] || productPhoto(result.name) })); setNotice(`${result.name} product details opened.`); }
       else add({ id: result.productId, name: result.name }, { ...matched, stock: matched.quantity }, true);
     } catch (error) { setNotice(error.message || 'No product matched that barcode or QR code.'); }
   }
   resolveCodeRef.current = resolveCode;
   useEffect(() => {
-    if (!remoteSession) return undefined;
+    if (!remoteSessions.length) return undefined;
     let active = true;
     let polling = false;
+    let currentToken = '';
     async function pollRemoteScans() {
       if (!active || polling) return;
       polling = true;
       try {
-        const result = await api.remoteScannerScans(remoteSession.token, remoteCursorRef.current);
-        for (const scan of result.scans) {
+        for (const session of remoteSessions) {
           if (!active) break;
-          remoteCursorRef.current = Number(scan.id);
-          await resolveCodeRef.current(scan.code);
+          currentToken = session.token;
+          const result = await api.remoteScannerScans(session.token, remoteCursorsRef.current.get(session.token) ?? session.cursor);
+          for (const scan of result.scans) {
+            if (!active) break;
+            remoteCursorsRef.current.set(session.token, Number(scan.id));
+            saveRemoteScannerSessions(remoteSessionsRef.current, remoteCursorsRef.current);
+            await resolveCodeRef.current(scan.code);
+          }
         }
       } catch (error) {
-        if (active && error.status === 404) { setRemoteSession(null); setRemoteDialogOpen(false); setNotice('Phone pairing expired.'); }
+        if (active && error.status === 404 && currentToken) { removeRemoteSession(currentToken); setNotice('Phone pairing is no longer available.'); }
       } finally { polling = false; }
     }
     pollRemoteScans();
     // shortcut: 700 ms polling, replace with a push channel if scan volume or latency requires it.
     const timer = window.setInterval(pollRemoteScans, 700);
     return () => { active = false; window.clearInterval(timer); };
-  }, [remoteSession]);
+  }, [remoteSessions]);
   function scan(event) { if (event.key !== 'Enter' || !event.currentTarget.value.trim() || loading) return; event.preventDefault(); const code = event.currentTarget.value.trim(); setQuery(''); resolveCode(code); }
   async function pairPhone() {
-    if (remotePairBusy) return;
+    if (remotePairBusy || remoteSessionsRef.current.length >= 2) return;
     setRemotePairBusy(true); setNotice('');
     try {
       const session = await api.createRemoteScanner();
-      const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('remoteScanner', session.token);
-      remoteCursorRef.current = 0;
-      setRemoteSession({ ...session, url: url.toString() }); setRemoteDialogOpen(true);
+      const paired = { ...session, token: session.token, cursor: 0, url: remoteScannerUrl(session.token) };
+      remoteCursorsRef.current.set(paired.token, 0);
+      updateRemoteSessions([...remoteSessionsRef.current, paired]); setRemoteDialogOpen(true);
     } catch (error) { setNotice(error.message || 'Phone pairing could not start.'); }
     finally { setRemotePairBusy(false); }
   }
-  async function stopRemoteScanner() {
-    const session = remoteSession;
-    setRemoteSession(null); setRemoteDialogOpen(false);
-    if (!session) return;
-    try { await api.closeRemoteScanner(session.token); setNotice('Phone pairing stopped.'); }
-    catch (error) { setNotice(error.message || 'Phone pairing could not be stopped.'); }
+  async function stopRemoteScanner(token) {
+    try { await api.closeRemoteScanner(token); removeRemoteSession(token); setNotice('Phone pairing stopped.'); }
+    catch (error) { if (error.status === 404) removeRemoteSession(token); setNotice(error.message || 'Phone pairing could not be stopped.'); }
   }
   function closeCamera() { setCameraOpen(false); requestAnimationFrame(() => document.querySelector('.camera-trigger')?.focus()); }
   function saveProductImage(productId, event) {
@@ -314,12 +364,12 @@ function PosPanel({ onStockChanged }) {
 
   return <>
     <header><div><h1>Point of sale</h1></div></header>
-    {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
+    {notice && <div className="notice" role="status"><span>{notice}</span><div className="notice-actions">{canPrintReceipt && <button type="button" className="notice-print" onClick={() => window.print()}>Print receipt</button>}<button type="button" className="notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss">×</button></div></div>}
     <div className="pos-grid">
       <section className="catalog">
-        <div className="search"><span aria-hidden="true">⌕</span><input ref={searchRef} autoFocus aria-label="Search products or scan a code" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={scan} placeholder="Search products or scan a code…" disabled={loading} /><button type="button" className="search-clear" onClick={() => { setQuery(''); searchRef.current?.focus(); }} disabled={!query || loading} aria-label="Clear search">×</button><kbd>Enter to scan</kbd></div>
-        <div className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div>
-        <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><button className="scan" disabled={loading || remotePairBusy} onClick={() => remoteSession ? setRemoteDialogOpen(true) : pairPhone()}>{remoteSession ? 'Show phone' : remotePairBusy ? 'Pairing…' : 'Pair phone'}</button><button className="scan" disabled={loading} onClick={() => searchRef.current?.focus()}>⌁ Scan code</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Use camera</button></div>
+        <div className="search-row"><div className="search"><span aria-hidden="true">⌕</span><input ref={searchRef} autoFocus aria-label="Search products or scan a code" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={scan} placeholder="Search products or scan a code…" disabled={loading} /><button type="button" className="search-clear" onClick={() => { setQuery(''); searchRef.current?.focus(); }} disabled={!query || loading} aria-label="Clear search">×</button></div><button type="button" className={filtersOpen ? 'filter-toggle active' : 'filter-toggle'} aria-label="Filter products" aria-expanded={filtersOpen} aria-controls="product-filters" title="Filter products" onClick={() => setFiltersOpen(open => !open)}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" /></svg></button><button type="button" className="low-stock-button" aria-label={`${lowStockCount} low-stock notifications`} aria-expanded={alertsOpen} title="Low-stock alerts" onClick={onOpenLowStock}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>{lowStockCount > 0 && <b aria-hidden="true">{lowStockCount > 99 ? '99+' : lowStockCount}</b>}</button></div>
+        {filtersOpen && <div id="product-filters" className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div>}
+        <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><div className="catalog-actions"><button className="scan scan-secondary" disabled={loading || remotePairBusy} onClick={() => remoteSessions.length ? setRemoteDialogOpen(true) : pairPhone()}>{remoteSessions.length ? `Show phone${remoteSessions.length > 1 ? 's' : ''}` : remotePairBusy ? 'Pairing…' : 'Pair phone'}</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Barcode Scanner</button></div></div>
         {catalogError && <p className="form-notice" role="alert">{catalogError}</p>}
         {!catalogError && catalogLoading && <p className="catalog-state" role="status">Loading products…</p>}
         {!catalogError && !catalogLoading && !visibleProducts.length && <p className="catalog-state">No active products matched that search.</p>}
@@ -354,24 +404,26 @@ function PosPanel({ onStockChanged }) {
       </aside>
     </div>
     {!!cart.length && <button type="button" className="mobile-cart-link" onClick={() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>View cart · {money(totals.total)}</button>}
-    {receipt && <div ref={receiptRef}><Receipt receipt={receipt} onClose={() => { setReceipt(null); searchRef.current?.focus(); }} /></div>}
+    {receipt && <Receipt receipt={receipt} />}
     {cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}
     {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}
-    {remoteSession && remoteDialogOpen && <RemoteScannerDialog session={remoteSession} onClose={() => setRemoteDialogOpen(false)} onStop={stopRemoteScanner} />}
+    {remoteSessions.length > 0 && remoteDialogOpen && <RemoteScannerDialog sessions={remoteSessions} onClose={() => setRemoteDialogOpen(false)} onStop={stopRemoteScanner} onPair={pairPhone} pairBusy={remotePairBusy} />}
   </>;
 }
 
-function RemoteScannerDialog({ session, onClose, onStop }) {
-  const closeRef = useRef(null); const dialogRef = useRef(null); const [qrCode, setQrCode] = useState('');
+function RemoteScannerDialog({ sessions, onClose, onStop, onPair, pairBusy }) {
+  const closeRef = useRef(null); const dialogRef = useRef(null); const [qrCodes, setQrCodes] = useState({});
   useEffect(() => {
     let active = true;
-    QRCode.toDataURL(session.url, { errorCorrectionLevel: 'M', margin: 2, width: 240 })
-      .then(dataUrl => { if (active) setQrCode(dataUrl); })
-      .catch(() => { if (active) setQrCode(''); });
+    setQrCodes({});
+    Promise.all(sessions.map(async session => {
+      try { return [session.token, await QRCode.toDataURL(session.url, { errorCorrectionLevel: 'M', margin: 2, width: 240 })]; }
+      catch { return [session.token, '']; }
+    })).then(entries => { if (active) setQrCodes(Object.fromEntries(entries)); });
     closeRef.current?.focus();
     return () => { active = false; };
-  }, [session.url]);
-  return <div className="remote-scanner-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="remote-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-scanner-title"><div className="camera-head"><div><h2 id="remote-scanner-title">Pair phone scanner</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><p>Open your phone camera and scan this code. Keep the phone page open while you scan products.</p>{qrCode ? <img className="remote-scanner-qr" src={qrCode} alt="Phone scanner pairing QR code" /> : <p className="form-notice" role="alert">Pairing QR code could not be generated. Use the link below.</p>}<code className="remote-scanner-link">{session.url}</code><p className="remote-scanner-expiry">This pairing expires in 10 minutes.</p><div className="remote-scanner-actions"><button className="secondary" onClick={onStop}>Stop pairing</button><button className="checkout" onClick={onClose}>Done</button></div></section></div>;
+  }, [sessions]);
+  return <div className="remote-scanner-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="remote-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-scanner-title"><div className="camera-head"><div><h2 id="remote-scanner-title">Paired phone scanners</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><p>Open each phone camera and scan its QR code. Pairings stay active until you stop them or sign out.</p><div className="remote-scanner-devices">{sessions.map((session, index) => <article className="remote-scanner-device" key={session.token}><h3>Phone {index + 1}</h3>{qrCodes[session.token] ? <img className="remote-scanner-qr" src={qrCodes[session.token]} alt={`Phone ${index + 1} scanner pairing QR code`} /> : <p className="form-notice" role="alert">Pairing QR code could not be generated. Use the link below.</p>}<code className="remote-scanner-link">{session.url}</code><button className="secondary" onClick={() => onStop(session.token)}>Stop pairing</button></article>)}</div><div className="remote-scanner-actions">{sessions.length < 2 && <button className="secondary" disabled={pairBusy} onClick={onPair}>{pairBusy ? 'Pairing…' : 'Pair another phone'}</button>}<button className="checkout" onClick={onClose}>Done</button></div></section></div>;
 }
 
 function ProductDetailsDialog({ product, onClose, onAdd }) {
@@ -379,5 +431,5 @@ function ProductDetailsDialog({ product, onClose, onAdd }) {
   const [selectedId, setSelectedId] = useState(product.matchedVariantId);
   const selected = product.variants.find(variant => String(variant.id) === String(selectedId)) || product.variants[0];
   useEffect(() => { closeRef.current?.focus(); return () => returnFocusRef.current?.focus(); }, []);
-  return <div className="product-detail-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="product-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="product-detail-title"><div className="camera-head"><div><h2 id="product-detail-title">{product.name}</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><div className="detail-summary"><span className={selected.quantity <= selected.reorderPoint ? 'stock-pill low' : 'stock-pill'}>{selected.quantity ? `${selected.quantity} available` : 'Out of stock'}</span><b>{money(selected.priceCents)}</b></div><dl><div><dt>Size</dt><dd>{selected.size}</dd></div><div><dt>Color</dt><dd>{selected.color}</dd></div><div><dt>Low-stock point</dt><dd>{selected.reorderPoint}</dd></div></dl><div className="detail-variants" aria-label="Product variants">{product.variants.map(variant => <button key={variant.id} className={String(variant.id) === String(selected.id) ? 'selected' : ''} onClick={() => setSelectedId(variant.id)}><b>{variant.size} · {variant.color}</b><small>{variant.quantity} available · {money(variant.priceCents)}</small></button>)}</div><button className="checkout" disabled={!selected.quantity} onClick={() => onAdd({ id: product.productId, name: product.name }, selected)}>{selected.quantity ? `Add to cart · ${money(selected.priceCents)}` : 'Out of stock'}</button></section></div>;
+  return <div className="product-detail-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="product-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="product-detail-title"><div className="camera-head"><div><h2 id="product-detail-title">{product.name}</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div>{product.image && <img className="product-detail-image" src={product.image} alt={`${product.name} product`} /> }<div className="detail-summary"><b>{money(selected.priceCents)}</b></div><dl><div><dt>Size</dt><dd>{selected.size}</dd></div><div><dt>Color</dt><dd>{selected.color}</dd></div><div className={selected.quantity > selected.reorderPoint ? 'stock-status good' : 'stock-status low'}><dt>Available</dt><dd>{selected.quantity} pieces</dd></div></dl><div className="detail-variants" aria-label="Product variants">{product.variants.map(variant => { const selectedVariant = String(variant.id) === String(selected.id); return <button type="button" key={variant.id} className={selectedVariant ? 'selected' : ''} aria-pressed={selectedVariant} onClick={() => setSelectedId(variant.id)}><b>{variant.size}</b><span>{variant.color}</span></button>; })}</div><button className="checkout" disabled={!selected.quantity} onClick={() => onAdd({ id: product.productId, name: product.name }, selected)}>{selected.quantity ? `Add to cart · ${money(selected.priceCents)}` : 'Out of stock'}</button></section></div>;
 }

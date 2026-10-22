@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import React from 'react';
 import { expandVariantGroups, generatedIdentifier, SIZE_OPTIONS } from './product-variants.js';
@@ -17,10 +17,12 @@ export default function ProductPanel({ onStockChanged }) {
   const [statusBusy, setStatusBusy] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [editJump, setEditJump] = useState(0);
   const [editVariants, setEditVariants] = useState([]);
   const [editReason, setEditReason] = useState('Product details and stock correction');
   const [editNotice, setEditNotice] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const editFormRef = useRef(null);
 
   async function loadCatalog() {
     setCatalogLoading(true);
@@ -30,6 +32,7 @@ export default function ProductPanel({ onStockChanged }) {
   }
 
   useEffect(() => { loadCatalog(); }, [catalogStatus]);
+  useEffect(() => { if (editingProduct) editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [editingProduct, editJump]);
 
   function updateVariant(index, key, value) { setVariants(rows => rows.map((row, i) => i === index ? { ...row, [key]: value } : row)); }
   function toggleSize(index, size, checked) { setVariants(rows => rows.map((row, i) => i !== index ? row : {
@@ -41,6 +44,7 @@ export default function ProductPanel({ onStockChanged }) {
 
   function startEdit(product) {
     setEditingProduct(product);
+    setEditJump(value => value + 1);
     setEditVariants((product.variants || []).map(variant => ({ id: variant.id, size: variant.size, color: variant.color, price: (Number(variant.priceCents) / 100).toFixed(2), quantity: String(variant.stock), expectedQuantity: Number(variant.stock) })));
     setEditReason('Product details and stock correction');
     setEditNotice('');
@@ -98,8 +102,8 @@ export default function ProductPanel({ onStockChanged }) {
 
   return <>
     <section className="admin-heading"><h1>Add a product</h1></section>
-    {editingProduct && <form className="product-form product-edit-form" onSubmit={saveEdit}>
-      <div className="variant-head"><div><h2>Update {editingProduct.name}</h2></div><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div>
+    {editingProduct && <form ref={editFormRef} className="product-form product-edit-form" onSubmit={saveEdit}>
+      <div className="variant-head"><div><h2>Update <span className="edit-product-name">{editingProduct.name}</span></h2></div><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div>
       <p className="edit-note">Set the absolute stock, color, and price for each size. Stock differences are recorded in the inventory audit trail.</p>
       <div className="edit-variants">{editVariants.map(variant => <fieldset key={variant.id}><legend>{variant.size}</legend><label className="field">Color<input required maxLength={50} value={variant.color} onChange={event => updateEditVariant(variant.id, 'color', event.target.value)} /></label><label className="field">Price (₱)<input required min="0" step="0.01" type="number" value={variant.price} onChange={event => updateEditVariant(variant.id, 'price', event.target.value)} /></label><label className="field">Pieces in stock<input required min="0" step="1" type="number" value={variant.quantity} onChange={event => updateEditVariant(variant.id, 'quantity', event.target.value)} /></label></fieldset>)}</div>
       <label className="field edit-reason">Reason for update<input required maxLength={500} value={editReason} onChange={event => setEditReason(event.target.value)} /></label>
