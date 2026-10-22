@@ -67,8 +67,9 @@ export default function App() {
   useEffect(() => {
     if (resetRoute || remoteScannerToken) { setChecking(false); return; }
     let active = true;
-    api.me().then(currentUser => { if (active) { setUser(currentUser); setChecking(false); } }).catch(() => { if (active) setChecking(false); });
-    return () => { active = false; };
+    const controller = new AbortController();
+    api.me(controller.signal).then(currentUser => { if (active) { setUser(currentUser); setChecking(false); } }).catch(error => { if (active && error.name !== 'AbortError') { setUser(null); setChecking(false); } });
+    return () => { active = false; controller.abort(); };
   }, [resetRoute, remoteScannerToken]);
 
   const loadAlerts = useCallback(async () => {
@@ -179,7 +180,7 @@ function Login({ onLogin }) {
   async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } onLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
   if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={onLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me on this device</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Keep me signed in on this device</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
 }
 
 function MfaLogin({ challenge, remember, onLogin, onBack }) {
