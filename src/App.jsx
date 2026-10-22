@@ -173,7 +173,7 @@ function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRe
 }
 
 function Login({ onLogin }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
   async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } onLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
   if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={onLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
