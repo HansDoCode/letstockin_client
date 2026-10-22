@@ -26,12 +26,12 @@ function loadRemoteScannerSessions() {
     if (!Array.isArray(saved)) return [];
     return saved.filter(session => session && validRemoteScannerToken(session.token)).slice(0, 2).map(session => {
       const cursor = Number(session.cursor);
-      return { token: session.token, cursor: Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0, url: remoteScannerUrl(session.token) };
+      return { token: session.token, pairedAt: session.pairedAt || null, cursor: Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0, url: remoteScannerUrl(session.token) };
     });
   } catch { return []; }
 }
 function saveRemoteScannerSessions(sessions, cursors) {
-  try { window.localStorage.setItem(remoteScannerStorageKey, JSON.stringify(sessions.map(session => ({ token: session.token, cursor: cursors.get(session.token) ?? session.cursor ?? 0 })))); } catch {}
+  try { window.localStorage.setItem(remoteScannerStorageKey, JSON.stringify(sessions.map(session => ({ token: session.token, pairedAt: session.pairedAt || null, cursor: cursors.get(session.token) ?? session.cursor ?? 0 })))); } catch {}
 }
 const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team'], ['security', 'S', 'Security']];
 
@@ -123,6 +123,16 @@ function RemoteScannerPage({ token }) {
   const [cooldown, setCooldown] = useState(false);
   const [notice, setNotice] = useState('Ready to scan for the computer.');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api.remoteScannerPair(token).catch(cause => {
+      if (!active) return;
+      setError(cause.message || 'This phone pairing is no longer available.');
+      if (cause.status === 404) setPaired(false);
+    });
+    return () => { active = false; };
+  }, [token]);
 
   useEffect(() => {
     if (!cooldown) return undefined;
@@ -233,13 +243,13 @@ function DiscountEditor({ line, onChange, disabled = false }) {
 }
 
 function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock }) {
-  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSessions, setRemoteSessions] = useState(loadRemoteScannerSessions); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false); const [remoteQrToken, setRemoteQrToken] = useState('');
+  const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSessions, setRemoteSessions] = useState(loadRemoteScannerSessions); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [productImages, setProductImages] = useState(() => { try { const saved = JSON.parse(window.localStorage.getItem(productImageStorageKey) || '{}'); return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}; } catch { return {}; } });
   const [cashReceived, setCashReceived] = useState('');
   const searchRef = useRef(null); const cartRef = useRef(null); const remoteSessionsRef = useRef(remoteSessions); const remoteCursorsRef = useRef(new Map(remoteSessions.map(session => [session.token, session.cursor]))); const resolveCodeRef = useRef(null);
   function updateRemoteSessions(next) { remoteSessionsRef.current = next; setRemoteSessions(next); saveRemoteScannerSessions(next, remoteCursorsRef.current); }
-  function removeRemoteSession(token) { remoteCursorsRef.current.delete(token); if (remoteQrToken === token) setRemoteQrToken(''); const next = remoteSessionsRef.current.filter(session => session.token !== token); updateRemoteSessions(next); if (!next.length) setRemoteDialogOpen(false); }
+  function removeRemoteSession(token) { remoteCursorsRef.current.delete(token); const next = remoteSessionsRef.current.filter(session => session.token !== token); updateRemoteSessions(next); if (!next.length) setRemoteDialogOpen(false); }
   useEffect(() => {
     let current = true;
     const timer = window.setTimeout(async () => { if (current) setCatalogLoading(true); try { const result = await api.products(query); if (current) { setProducts(result); setCatalogError(''); } } catch (cause) { if (current) { setProducts([]); setCatalogError(cause.message || 'Products could not be loaded.'); } } finally { if (current) setCatalogLoading(false); } }, 220);
@@ -297,6 +307,8 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
           if (!active) break;
           currentToken = session.token;
           const result = await api.remoteScannerScans(session.token, remoteCursorsRef.current.get(session.token) ?? session.cursor);
+          const pairedAt = result.pairedAt || null;
+          if (pairedAt !== (session.pairedAt || null)) updateRemoteSessions(remoteSessionsRef.current.map(item => item.token === session.token ? { ...item, pairedAt } : item));
           for (const scan of result.scans) {
             if (!active) break;
             remoteCursorsRef.current.set(session.token, Number(scan.id));
@@ -321,7 +333,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
       const session = await api.createRemoteScanner();
       const paired = { ...session, token: session.token, cursor: 0, url: remoteScannerUrl(session.token) };
       remoteCursorsRef.current.set(paired.token, 0);
-      updateRemoteSessions([...remoteSessionsRef.current, paired]); setRemoteQrToken(paired.token); setRemoteDialogOpen(true);
+      updateRemoteSessions([...remoteSessionsRef.current, paired]); setRemoteDialogOpen(true);
     } catch (error) { setNotice(error.message || 'Phone pairing could not start.'); }
     finally { setRemotePairBusy(false); }
   }
@@ -407,23 +419,23 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
     {receipt && <Receipt receipt={receipt} />}
     {cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}
     {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}
-    {remoteSessions.length > 0 && remoteDialogOpen && <RemoteScannerDialog sessions={remoteSessions} revealToken={remoteQrToken} onClose={() => { setRemoteDialogOpen(false); setRemoteQrToken(''); }} onStop={stopRemoteScanner} onPair={pairPhone} pairBusy={remotePairBusy} />}
+    {remoteSessions.length > 0 && remoteDialogOpen && <RemoteScannerDialog sessions={remoteSessions} onClose={() => setRemoteDialogOpen(false)} onStop={stopRemoteScanner} onPair={pairPhone} pairBusy={remotePairBusy} />}
   </>;
 }
 
-function RemoteScannerDialog({ sessions, revealToken, onClose, onStop, onPair, pairBusy }) {
+function RemoteScannerDialog({ sessions, onClose, onStop, onPair, pairBusy }) {
   const closeRef = useRef(null); const dialogRef = useRef(null); const [qrCodes, setQrCodes] = useState({});
   useEffect(() => {
     let active = true;
     setQrCodes({});
-    Promise.all(sessions.filter(session => session.token === revealToken).map(async session => {
+    Promise.all(sessions.filter(session => !session.pairedAt).map(async session => {
       try { return [session.token, await QRCode.toDataURL(session.url, { errorCorrectionLevel: 'M', margin: 2, width: 240 })]; }
       catch { return [session.token, '']; }
     })).then(entries => { if (active) setQrCodes(Object.fromEntries(entries)); });
     closeRef.current?.focus();
     return () => { active = false; };
   }, [sessions]);
-  return <div className="remote-scanner-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="remote-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-scanner-title"><div className="camera-head"><div><h2 id="remote-scanner-title">Paired phone scanners</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><p>Open each phone camera and scan its QR code. Pairings stay active until you stop them or sign out.</p><div className="remote-scanner-devices">{sessions.map((session, index) => <article className="remote-scanner-device" key={session.token}><h3>Phone {index + 1}{session.token !== revealToken ? ' PAIRED' : ''}</h3>{session.token === revealToken && <>{qrCodes[session.token] ? <img className="remote-scanner-qr" src={qrCodes[session.token]} alt={`Phone ${index + 1} scanner pairing QR code`} /> : <p className="form-notice" role="alert">Pairing QR code could not be generated. Use the link below.</p>}<code className="remote-scanner-link">{session.url}</code></>}<button className="secondary" onClick={() => onStop(session.token)}>Stop pairing</button></article>)}</div><div className="remote-scanner-actions">{sessions.length < 2 && <button className="secondary" disabled={pairBusy} onClick={onPair}>{pairBusy ? 'Pairing…' : 'Pair another phone'}</button>}<button className="checkout" onClick={onClose}>Done</button></div></section></div>;
+  return <div className="remote-scanner-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="remote-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="remote-scanner-title"><div className="camera-head"><div><h2 id="remote-scanner-title">Paired phone scanners</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div><p>Open each phone camera and scan its QR code. Pairings stay active until you stop them or sign out.</p><div className="remote-scanner-devices">{sessions.map((session, index) => <article className="remote-scanner-device" key={session.token}><h3>Phone {index + 1}{session.pairedAt ? ' PAIRED' : ''}</h3>{!session.pairedAt && <>{qrCodes[session.token] ? <img className="remote-scanner-qr" src={qrCodes[session.token]} alt={`Phone ${index + 1} scanner pairing QR code`} /> : <p className="form-notice" role="alert">Pairing QR code could not be generated. Use the link below.</p>}<code className="remote-scanner-link">{session.url}</code></>}<button className="secondary" onClick={() => onStop(session.token)}>Stop pairing</button></article>)}</div><div className="remote-scanner-actions">{sessions.length < 2 && <button className="secondary" disabled={pairBusy} onClick={onPair}>{pairBusy ? 'Pairing…' : 'Pair another phone'}</button>}<button className="checkout" onClick={onClose}>Done</button></div></section></div>;
 }
 
 function ProductDetailsDialog({ product, onClose, onAdd }) {

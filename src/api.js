@@ -23,6 +23,7 @@ export const api = {
   completePasswordReset: (data) => request('/auth/password-reset/complete', { method: 'POST', body: JSON.stringify(data) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   createRemoteScanner: () => request('/remote-scanner/sessions', { method: 'POST' }),
+  remoteScannerPair: (token) => request(`/remote-scanner/sessions/${encodeURIComponent(token)}/pair`, { method: 'POST' }),
   remoteScannerScan: (token, code) => request(`/remote-scanner/sessions/${encodeURIComponent(token)}/scans`, { method: 'POST', body: JSON.stringify({ code }) }),
   remoteScannerScans: (token, after = 0) => request(`/remote-scanner/sessions/${encodeURIComponent(token)}/scans?after=${encodeURIComponent(after)}`),
   closeRemoteScanner: (token) => request(`/remote-scanner/sessions/${encodeURIComponent(token)}`, { method: 'DELETE' }),
