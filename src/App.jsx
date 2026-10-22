@@ -66,7 +66,9 @@ export default function App() {
 
   useEffect(() => {
     if (resetRoute || remoteScannerToken) { setChecking(false); return; }
-    api.me().then(setUser).catch(() => {}).finally(() => setChecking(false));
+    let active = true;
+    api.me().then(currentUser => { if (active) { setUser(currentUser); setChecking(false); } }).catch(() => { if (active) setChecking(false); });
+    return () => { active = false; };
   }, [resetRoute, remoteScannerToken]);
 
   const loadAlerts = useCallback(async () => {
