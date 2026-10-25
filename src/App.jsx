@@ -236,7 +236,7 @@ function PasswordResetPage() {
 function Receipt({ receipt }) {
   const bars = code128Bars(`SALE-${receipt.id}`);
   const barcodeWidth = bars.reduce((total, bar) => total + bar.width * 2, 0) + 24;
-  const receiptDate = new Date(receipt.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+  const receiptDate = new Date(receipt.createdAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' });
   let barcodeX = 12;
   return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}>
     <div className="receipt-paper">
