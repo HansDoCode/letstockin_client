@@ -24,6 +24,12 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
 .login-card p { color:var(--muted); font-size:14px }
 .login-card .field { color:var(--navy) }
 .login-card .field input { height:46px }
+.login-options { display:grid; gap:12px }
+.google-sign-in { display:flex; align-items:center; justify-content:center; gap:10px; min-height:46px; border:1px solid var(--line); border-radius:10px; color:var(--navy); background:#fff; text-decoration:none; font-size:13px; font-weight:700 }
+.google-sign-in:hover,.google-sign-in:focus-visible { background:#f8f4ec }
+.google-mark { display:grid; place-items:center; width:22px; height:22px; color:#4285f4; font-size:18px; font-weight:800 }
+.login-divider { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:11px }
+.login-divider::before,.login-divider::after { content:''; height:1px; flex:1; background:var(--line) }
 .remember-field { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; cursor:pointer }
 .remember-field input { width:16px; height:16px; margin:0; accent-color:var(--orange) }
 .signout { display:block; width:100%; margin-top:12px; border:1px solid #6e8299; border-radius:8px; background:transparent; color:#fff; padding:8px; text-align:left }

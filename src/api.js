@@ -13,6 +13,7 @@ async function request(path, options = {}) {
 }
 export const api = {
   me: (signal) => request('/auth/me', { cache: 'no-store', signal }),
+  googleLoginUrl: () => `${baseUrl}/auth/google`,
   login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   verifyMfa: (data) => request('/auth/mfa/verify', { method: 'POST', body: JSON.stringify(data) }),
   mfaStatus: () => request('/auth/mfa/status'),

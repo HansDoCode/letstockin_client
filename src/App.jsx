@@ -24,6 +24,14 @@ function loadLoginEmail() {
 function saveLoginEmail(email, remember) {
   try { remember ? window.localStorage.setItem(loginEmailStorageKey, email.trim()) : window.localStorage.removeItem(loginEmailStorageKey); } catch {}
 }
+const googleAuthMessages = {
+  'google-not-configured': 'Google sign-in is not configured yet. Use email and password for now.',
+  'google-cancelled': 'Google sign-in was cancelled.',
+  'google-invalid-state': 'Google sign-in expired. Please try again.',
+  'google-not-registered': 'This Google account is not registered. Ask an administrator to create your account first.',
+  'google-account-conflict': 'This Google account is linked to a different Letstockin account.',
+  'google-failed': 'Google sign-in could not be completed. Try again or use email and password.'
+};
 const validRemoteScannerToken = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 function remoteScannerUrl(token) {
   const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('remoteScanner', token); return url.toString();
@@ -71,6 +79,8 @@ export default function App() {
   const [inventoryQuery, setInventoryQuery] = useState('');
   const [navOpen, setNavOpen] = useState(false);
   const resetRoute = window.location.pathname === '/reset-password';
+  const authErrorCode = useMemo(() => new URLSearchParams(window.location.search).get('authError') || '', []);
+  const authError = Object.prototype.hasOwnProperty.call(googleAuthMessages, authErrorCode) ? googleAuthMessages[authErrorCode] : '';
   const remoteScannerToken = useMemo(() => {
     const token = new URLSearchParams(window.location.search).get('remoteScanner') || '';
     return /^[a-f0-9]{64}$/.test(token) ? token : '';
@@ -83,6 +93,13 @@ export default function App() {
     api.me(controller.signal).then(currentUser => { if (active) { setUser(currentUser); setChecking(false); } }).catch(error => { if (active && error.name !== 'AbortError') { setUser(null); setChecking(false); } });
     return () => { active = false; controller.abort(); };
   }, [resetRoute, remoteScannerToken]);
+
+  useEffect(() => {
+    if (!authErrorCode) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('authError');
+    window.history.replaceState({}, '', url.toString());
+  }, [authErrorCode]);
 
   const loadAlerts = useCallback(async () => {
     if (!user) return;
@@ -108,7 +125,7 @@ export default function App() {
   if (remoteScannerToken) return <RemoteScannerPage token={remoteScannerToken} />;
   if (resetRoute) return <PasswordResetPage />;
   if (checking) return <SessionSkeleton />;
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={setUser} initialError={authError} />;
 
   const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory' || id === 'security');
   function openInventory(alert) { setInventoryQuery(alert.name); setView('inventory'); setAlertsOpen(false); setNavOpen(false); }
@@ -187,13 +204,13 @@ function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRe
   </div>;
 }
 
-function Login({ onLogin }) {
-  const [email, setEmail] = useState(loadLoginEmail); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
+function Login({ onLogin, initialError = '' }) {
+  const [email, setEmail] = useState(loadLoginEmail); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(initialError); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
   function finishLogin(result) { saveLoginEmail(email, remember); onLogin(result); }
   async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } finishLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
   if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={finishLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><div className="login-options"><a className="google-sign-in" href={api.googleLoginUrl()}><span className="google-mark" aria-hidden="true">G</span>Continue with Google</a><div className="login-divider"><span>or use email and password</span></div></div><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
 }
 
 function MfaLogin({ challenge, remember, onLogin, onBack }) {
