@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { api } from './api.js';
+import Skeleton from './Skeleton.jsx';
 
 export default function SecurityPanel() {
   const [status, setStatus] = useState(null);
@@ -72,7 +73,7 @@ export default function SecurityPanel() {
     finally { setBusy(false); }
   }
 
-  if (loading) return <section className="data-panel security-panel"><h2>Security</h2><div className="security-content"><p>Loading security settings…</p></div></section>;
+  if (loading) return <section className="data-panel security-panel" role="status" aria-label="Loading security settings" aria-busy="true"><h2>Security</h2><div className="security-content security-loading"><Skeleton className="skeleton-security-heading" /><Skeleton className="skeleton-security-copy" /><Skeleton className="skeleton-security-field" /><Skeleton className="skeleton-security-button" /></div></section>;
   return <>
     <section className="admin-heading"><h1>Security</h1></section>
     <section className="data-panel security-panel">

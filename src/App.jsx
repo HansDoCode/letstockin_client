@@ -6,6 +6,7 @@ import { ReportsPanel, TeamPanel } from './AdminPanels.jsx';
 import ProductPanel from './ProductPanel.jsx';
 import SecurityPanel from './SecurityPanel.jsx';
 import CameraScanner from './CameraScanner.jsx';
+import Skeleton from './Skeleton.jsx';
 import { code128Bars } from './barcode.js';
 import { parseCashCents } from './pos-money.js';
 import { normalizeProductDetails } from './product-details.js';
@@ -16,6 +17,13 @@ const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `
 const logoPath = `${import.meta.env.BASE_URL}images/letstockin-logo.png`;
 const productImageStorageKey = 'letstockin:product-images';
 const remoteScannerStorageKey = 'letstockin:remote-scanner-sessions';
+const loginEmailStorageKey = 'letstockin:login-email';
+function loadLoginEmail() {
+  try { return window.localStorage.getItem(loginEmailStorageKey) || ''; } catch { return ''; }
+}
+function saveLoginEmail(email, remember) {
+  try { remember ? window.localStorage.setItem(loginEmailStorageKey, email.trim()) : window.localStorage.removeItem(loginEmailStorageKey); } catch {}
+}
 const validRemoteScannerToken = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 function remoteScannerUrl(token) {
   const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('remoteScanner', token); return url.toString();
@@ -37,6 +45,10 @@ const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inven
 
 function Brand() {
   return <div className="brand"><img className="brand-logo" src={logoPath} alt="" /><span className="brand-name">Letstockin</span></div>;
+}
+
+function SessionSkeleton() {
+  return <main className="login-page"><section className="login-card session-skeleton" role="status" aria-label="Checking session" aria-busy="true"><Brand /><Skeleton className="skeleton-session-heading" /><Skeleton className="skeleton-session-line" /><Skeleton className="skeleton-session-field" /><Skeleton className="skeleton-session-field" /><Skeleton className="skeleton-session-button" /></section></main>;
 }
 
 function handleDialogKeys(event, container, onClose) {
@@ -95,7 +107,7 @@ export default function App() {
 
   if (remoteScannerToken) return <RemoteScannerPage token={remoteScannerToken} />;
   if (resetRoute) return <PasswordResetPage />;
-  if (checking) return <main className="login-page"><p>Checking session…</p></main>;
+  if (checking) return <SessionSkeleton />;
   if (!user) return <Login onLogin={setUser} />;
 
   const allowed = user.role === 'admin' ? navigation : navigation.filter(([id]) => id === 'pos' || id === 'inventory' || id === 'security');
@@ -176,11 +188,12 @@ function NotificationPanel({ alerts, error, role, onClose, onOpenInventory, onRe
 }
 
 function Login({ onLogin }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
-  async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } onLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
-  if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={onLogin} onBack={() => setMfaChallenge('')} />;
+  const [email, setEmail] = useState(loadLoginEmail); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [resetMode, setResetMode] = useState(false); const [mfaChallenge, setMfaChallenge] = useState('');
+  function finishLogin(result) { saveLoginEmail(email, remember); onLogin(result); }
+  async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } finishLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
+  if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={finishLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Keep me signed in on this device</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><p>Access your retail workspace.</p><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
 }
 
 function MfaLogin({ challenge, remember, onLogin, onBack }) {
@@ -243,6 +256,10 @@ function DiscountEditor({ line, onChange, disabled = false }) {
     <div className="discount-entry"><span aria-hidden="true">PHP</span><input id={`discount-${line.variant.id}`} aria-label="Discount amount in Philippine pesos" inputMode="decimal" type="number" min="0" max={(gross / 100).toFixed(2)} step="0.01" value={draft} placeholder="0.00" disabled={disabled} onChange={event => setDraft(event.target.value)} onBlur={() => commit(draft)} />{line.discountCents > 0 && <button type="button" className="discount-clear" disabled={disabled} onClick={() => { onChange(0); setDraft(''); }}>Clear</button>}</div>
     <div className="discount-presets" aria-label="Quick discount"><span>Quick</span>{[10, 20, 50].map(percent => <button type="button" key={percent} disabled={disabled} onClick={() => onChange(Math.round(gross * percent / 100))}>{percent}%</button>)}</div>
   </div>;
+}
+
+function ProductCardSkeleton() {
+  return <article className="product-card product-skeleton-card" aria-hidden="true"><Skeleton className="skeleton-product-art" /><div className="product-info"><Skeleton className="skeleton-product-title" /><Skeleton className="skeleton-product-price" /></div></article>;
 }
 
 function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock }) {
@@ -386,9 +403,9 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
         {filtersOpen && <div id="product-filters" className="filter-row"><button className={sort === 'stock' ? 'filter active' : 'filter'} onClick={() => setSort('stock')}>In stock first</button><button className={sort === 'all' ? 'filter active' : 'filter'} onClick={() => setSort('all')}>All products</button><button className={sort === 'recent' ? 'filter active' : 'filter'} onClick={() => setSort('recent')}>Date added</button></div>}
         <div className="catalog-head"><h2>Products <small>{products.length} found</small></h2><div className="catalog-actions"><button className="scan scan-secondary" disabled={loading || remotePairBusy} onClick={() => remoteSessions.length ? setRemoteDialogOpen(true) : pairPhone()}>{remoteSessions.length ? `Show phone${remoteSessions.length > 1 ? 's' : ''}` : remotePairBusy ? 'Pairing…' : 'Pair phone'}</button><button className="scan camera-trigger" disabled={loading} onClick={() => setCameraOpen(true)}>Barcode Scanner</button></div></div>
         {catalogError && <p className="form-notice" role="alert">{catalogError}</p>}
-        {!catalogError && catalogLoading && <p className="catalog-state" role="status">Loading products…</p>}
         {!catalogError && !catalogLoading && !visibleProducts.length && <p className="catalog-state">No active products matched that search.</p>}
-        <div className="cards">{visibleProducts.map(product => {
+        {!catalogError && catalogLoading && <div className="cards product-skeletons" role="status" aria-label="Loading products" aria-busy="true">{Array.from({ length: 4 }, (_, index) => <ProductCardSkeleton key={index} />)}</div>}
+        {!catalogError && !catalogLoading && <div className="cards">{visibleProducts.map(product => {
           const variants = [...(product.variants || [])].sort((a, b) => {
             const aSize = SIZE_OPTIONS.indexOf(a.size); const bSize = SIZE_OPTIONS.indexOf(b.size);
             return a.color.localeCompare(b.color) || (aSize < 0 ? 99 : aSize) - (bSize < 0 ? 99 : bSize);
@@ -399,7 +416,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
           <div className={photo ? 'product-art photo' : 'product-art'}>{photo ? <img src={photo} alt="" loading="lazy" /> : product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}<label className="product-image-input" aria-label={photo ? 'Change product image' : 'Add product image'} title={photo ? 'Change product image' : 'Add product image'}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m4 17 4.5-4.5 3 3 2.5-2.5L20 17" /></svg><input type="file" accept="image/*" onChange={event => saveProductImage(product.id, event)} /></label></div>
           <div className="product-info"><h3>{product.name}</h3>{onePrice && <strong>{money(variants[0].priceCents)}</strong>}</div>
         </article>;
-        })}</div>
+        })}</div>}
       </section>
       <aside className="cart" ref={cartRef} aria-label="Current order">
         <div className="cart-title"><div><h2>Cart <span>{cart.reduce((sum, line) => sum + line.quantity, 0)}</span></h2></div><button className="clear" onClick={() => { setCart([]); setCashReceived(''); }} disabled={!cart.length || loading}>Clear cart</button></div>

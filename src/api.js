@@ -40,6 +40,7 @@ export const api = {
   lowStock: () => request('/alerts/low-stock'),
   users: () => request('/users'),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
+  deleteUser: (id) => request(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   createProduct: (data) => request('/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProductStatus: (id, status) => request(`/products/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   updateProductVariants: (id, data) => request(`/products/${encodeURIComponent(id)}/variants`, { method: 'PATCH', body: JSON.stringify(data) }),
