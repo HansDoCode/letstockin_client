@@ -13,7 +13,7 @@ import { code128Bars } from './barcode.js';
 import { parseCashCents } from './pos-money.js';
 import { normalizeProductDetails } from './product-details.js';
 import { SIZE_OPTIONS } from './product-variants.js';
-import { getProductColorImages, loadProductImages, PRODUCT_IMAGE_STORAGE_KEY, readProductImage } from './product-images.js';
+import { getProductColorImages, getProductImage, loadProductImages, PRODUCT_IMAGE_STORAGE_KEY, readProductImage } from './product-images.js';
 
 const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
 const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
@@ -464,7 +464,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
             return a.color.localeCompare(b.color) || (aSize < 0 ? 99 : aSize) - (bSize < 0 ? 99 : bSize);
           });
           const lowestPrice = variants.length ? Math.min(...variants.map(variant => variant.priceCents)) : null;
-          const photo = productImages[product.id] || productPhoto(product.name);
+          const photo = getProductImage(product.id, variants, productImages) || productPhoto(product.name);
           return <article className="product-card" key={product.id} role="button" tabIndex={0} aria-label={`View details for ${product.name}`} onClick={event => { if (event.target.closest?.('button, input, label, a, select, textarea')) return; openProductDetails(product, variants); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return; event.preventDefault(); openProductDetails(product, variants); }}>
           <div className={photo ? 'product-art photo' : 'product-art'}>{photo ? <img src={photo} alt="" loading="lazy" /> : product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}<label className="product-image-input" aria-label={photo ? 'Change product image' : 'Add product image'} title={photo ? 'Change product image' : 'Add product image'}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m4 17 4.5-4.5 3 3 2.5-2.5L20 17" /></svg><input type="file" accept="image/*" onChange={event => saveProductImage(product.id, event)} /></label></div>
           <div className="product-info"><h3>{product.name}</h3>{lowestPrice != null && <strong>{money(lowestPrice)}</strong>}</div>
@@ -474,7 +474,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
       <aside className="cart" ref={cartRef} aria-label="Current order">
         <div className="cart-title"><div><h2>Cart <span>{cart.reduce((sum, line) => sum + line.quantity, 0)}</span></h2></div><button className="clear" onClick={() => { setCart([]); setCashReceived(''); }} disabled={!cart.length || loading}>Clear cart</button></div>
         <div className="cart-lines">{cart.length ? cart.map(line => <div className="line" key={line.variant.id}>
-          <div className="line-art">{productImages[line.product.id] || productPhoto(line.product.name) ? <img src={productImages[line.product.id] || productPhoto(line.product.name)} alt="" /> : line.product.name[0]}</div>
+          <div className="line-art">{getProductImage(line.product.id, [line.variant], productImages) || productPhoto(line.product.name) ? <img src={getProductImage(line.product.id, [line.variant], productImages) || productPhoto(line.product.name)} alt="" /> : line.product.name[0]}</div>
           <div className="line-main"><b>{line.product.name}</b><small><strong>{line.variant.size}</strong> / {line.variant.color} · {money(line.variant.priceCents)} each</small>
             <div className="line-controls"><button type="button" disabled={loading || line.quantity === 1} onClick={() => updateLine(line.variant.id, { quantity: line.quantity - 1 })} aria-label={`Decrease ${line.product.name} ${line.variant.size} ${line.variant.color}`}>−</button><span aria-label={`Quantity ${line.quantity}`}>{line.quantity}</span><button type="button" disabled={loading || line.quantity >= line.variant.stock} onClick={() => updateLine(line.variant.id, { quantity: line.quantity + 1 })} aria-label={`Increase ${line.product.name} ${line.variant.size} ${line.variant.color}`}>+</button><button type="button" className="line-remove" disabled={loading} onClick={() => { setCart(lines => lines.filter(item => item.variant.id !== line.variant.id)); if (cart.length === 1) setCashReceived(''); }} aria-label={`Remove ${line.product.name} ${line.variant.size} ${line.variant.color}`}>Remove</button></div>
             <details className="line-discount"><summary>Discount{line.discountCents ? ` · −${money(line.discountCents)}` : ''}</summary><DiscountEditor line={line} disabled={loading} onChange={discountCents => updateLine(line.variant.id, { discountCents })} /></details>

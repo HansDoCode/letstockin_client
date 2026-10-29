@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { colorImageKey, deleteProductImages, fitImageDimensions, getProductColorImages, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
+import { colorImageKey, deleteProductImages, fitImageDimensions, getProductColorImages, getProductImage, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
 
 test('image dimensions stay within the storage-friendly edge', () => {
   assert.deepEqual(fitImageDimensions(4000, 2000, 1400), { width: 1400, height: 700 });
@@ -10,6 +10,11 @@ test('image dimensions stay within the storage-friendly edge', () => {
 test('color image storage keys and lookup are case-insensitive', () => {
   const images = { [colorImageKey(7, 'Black')]: 'black.png' };
   assert.deepEqual(getProductColorImages(7, [{ color: 'black' }, { color: 'Red' }], images), { black: 'black.png' });
+});
+
+test('product image falls back to the first saved color image', () => {
+  const images = { [colorImageKey(7, 'Black')]: 'black.png' };
+  assert.equal(getProductImage(7, [{ color: 'Black' }], images), 'black.png');
 });
 
 test('deleting product images keeps other products intact', () => {

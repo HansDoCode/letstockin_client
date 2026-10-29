@@ -39,7 +39,7 @@ export default function ProductPanel({ onStockChanged }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [editJump, setEditJump] = useState(0);
   const [editGroups, setEditGroups] = useState([]);
-  const [editReason, setEditReason] = useState('Product details and stock correction');
+  const [editReason, setEditReason] = useState('');
   const [editNotice, setEditNotice] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const editFormRef = useRef(null);
@@ -72,7 +72,7 @@ export default function ProductPanel({ onStockChanged }) {
       image: images[colorImageKey(product.id, group.color)] || '',
       variants: group.variants.map(variant => ({ id: variant.id, size: variant.size, price: (Number(variant.priceCents) / 100).toFixed(2), quantity: String(variant.stock), expectedQuantity: Number(variant.stock) }))
     })));
-    setEditReason('Product details and stock correction');
+    setEditReason('');
     setEditNotice('');
   }
   function cancelEdit() { setEditingProduct(null); setEditGroups([]); setEditNotice(''); }
@@ -175,7 +175,7 @@ export default function ProductPanel({ onStockChanged }) {
     <section className="admin-heading"><h1>Add a product</h1></section>
     {editingProduct && <form ref={editFormRef} className="product-form product-edit-form" onSubmit={saveEdit}>
       <div className="variant-head"><div><h2>Update <span className="edit-product-name">{editingProduct.name}</span></h2></div><div className="edit-head-actions"><button type="button" className="secondary" onClick={() => setEditGroups(groups => [...groups, blankEditGroup()])} disabled={editSaving}>+ Add color group</button><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div></div>
-      <p className="edit-note">Sizes in one color group share the same color. Add another group to add a new color. Stock differences are recorded in the inventory audit trail.</p>
+      <p className="edit-note">Sizes in one color group share the same color. Add another group to add a new color. Variant and stock changes are recorded in the inventory audit trail.</p>
       <div className="edit-variant-groups">{editGroups.map((group, index) => <fieldset className="edit-variant-group" key={index}>
         <legend>Group {index + 1}</legend>
         <div className="edit-group-fields"><label className="field">Color<input required maxLength={50} value={group.color} onChange={event => updateEditGroup(index, 'color', event.target.value)} /></label>{!group.variants.some(variant => variant.id) && <label className="field">SKU base<input required maxLength={100} value={group.sku} onChange={event => updateEditGroup(index, 'sku', event.target.value)} placeholder="TEE-RED" /></label>}</div>
@@ -184,7 +184,7 @@ export default function ProductPanel({ onStockChanged }) {
         <div className="edit-group-sizes" role="group" aria-label={`Stock and price for color group ${index + 1}`}>{group.variants.map(variant => <div className="edit-size-row" key={variant.id || variant.size}><h3>{variant.size}</h3><label className="field">Price (₱)<input required min="0" step="0.01" type="number" value={variant.price} onChange={event => updateEditVariant(index, variant.size, 'price', event.target.value)} /></label><label className="field">Pieces in stock<input required min="0" step="1" type="number" value={variant.quantity} onChange={event => updateEditVariant(index, variant.size, 'quantity', event.target.value)} /></label></div>)}</div>
         {!group.variants.some(variant => variant.id) && <button type="button" className="remove edit-group-remove" onClick={() => setEditGroups(groups => groups.filter((_, i) => i !== index))} disabled={editSaving}>Remove group</button>}
       </fieldset>)}</div>
-      <label className="field edit-reason">Reason for update<input required maxLength={500} value={editReason} onChange={event => setEditReason(event.target.value)} /></label>
+      <label className="field edit-reason"><span>Reason for update (required)<small>Explain what changed and why. This is saved in the inventory audit trail.</small></span><input required maxLength={500} value={editReason} onChange={event => setEditReason(event.target.value)} /></label>
       {editNotice && <p className="form-notice" role="alert">{editNotice}</p>}
       <div className="edit-actions"><button type="submit" className="checkout" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save product changes'}</button><button type="button" className="secondary" onClick={cancelEdit} disabled={editSaving}>Cancel</button></div>
     </form>}

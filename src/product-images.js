@@ -54,6 +54,10 @@ export function getProductColorImages(productId, variants, images = loadProductI
     .filter(([, image]) => image));
 }
 
+export function getProductImage(productId, variants, images = loadProductImages()) {
+  return images[productId] || Object.values(getProductColorImages(productId, variants, images))[0] || null;
+}
+
 export function saveProductColorImages(productId, groups) {
   const next = loadProductImages();
   const prefix = `${productId}:color:`;
