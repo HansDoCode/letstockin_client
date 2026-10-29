@@ -113,6 +113,10 @@ export function getProductImage(productId, variants, images = loadProductImages(
   return images[productId] || Object.values(getProductColorImages(productId, variants, images))[0] || null;
 }
 
+export function getProductVariantImage(productId, variant, images = loadProductImages()) {
+  return Object.values(getProductColorImages(productId, variant ? [variant] : [], images))[0] || images[productId] || null;
+}
+
 export function saveProductColorImages(productId, groups) {
   const next = loadProductImages();
   const prefix = `${productId}:color:`;
