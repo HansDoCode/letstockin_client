@@ -1,10 +1,22 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { colorImageKey, deleteProductImages, fitImageDimensions, getProductColorImages, getProductImage, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
+import { colorImageKey, deleteProductImages, fitImageDimensions, getProductColorImages, getProductImage, PRODUCT_IMAGE_STORAGE_KEY, removeSolidEdgeBackground } from './product-images.js';
 
 test('image dimensions stay within the storage-friendly edge', () => {
   assert.deepEqual(fitImageDimensions(4000, 2000, 1400), { width: 1400, height: 700 });
   assert.deepEqual(fitImageDimensions(800, 600, 1400), { width: 800, height: 600 });
+});
+
+test('removes an edge-connected background without removing an enclosed dark product', () => {
+  const width = 5; const height = 5; const data = new Uint8ClampedArray(width * height * 4);
+  for (let index = 0; index < data.length; index += 4) data[index + 3] = 255;
+  for (let y = 1; y < 4; y += 1) for (let x = 1; x < 4; x += 1) {
+    const offset = (y * width + x) * 4;
+    data[offset] = 24; data[offset + 1] = 24; data[offset + 2] = 24;
+  }
+  assert.equal(removeSolidEdgeBackground(data, width, height), 16);
+  assert.equal(data[3], 0);
+  assert.equal(data[(2 * width + 2) * 4 + 3], 255);
 });
 
 test('color image storage keys and lookup are case-insensitive', () => {
