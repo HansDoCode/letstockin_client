@@ -3,7 +3,7 @@ import { api } from './api.js';
 import React from 'react';
 import Skeleton from './Skeleton.jsx';
 import { expandVariantGroups, generatedIdentifier, groupVariantsByColor, SIZE_OPTIONS } from './product-variants.js';
-import { colorImageKey, deleteProductImages, loadProductImages, saveProductColorImages } from './product-images.js';
+import { colorImageKey, deleteProductImages, loadProductImages, readProductImage, saveProductColorImages } from './product-images.js';
 import { deleteConfirmationToken, matchesDeleteConfirmation } from './delete-confirmation.js';
 
 const blankVariant = () => ({ sizes: [], quantities: {}, color: '', sku: '', barcode: generatedIdentifier('BAR'), qrCode: generatedIdentifier('QR'), price: '', reorderPoint: '5', image: '' });
@@ -15,10 +15,7 @@ function readImage(event, onImage, onError) {
   event.target.value = '';
   if (!file.type.startsWith('image/')) return onError('Choose an image file.');
   if (file.size > 2_000_000) return onError('Use an image smaller than 2 MB.');
-  const reader = new FileReader();
-  reader.onload = () => typeof reader.result === 'string' ? onImage(reader.result) : onError('That image could not be read.');
-  reader.onerror = () => onError('That image could not be read.');
-  reader.readAsDataURL(file);
+  readProductImage(file).then(onImage).catch(error => onError(error.message));
 }
 
 function ColorImagePicker({ image, label, onChange }) {

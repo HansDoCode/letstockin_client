@@ -1,4 +1,39 @@
 export const PRODUCT_IMAGE_STORAGE_KEY = 'letstockin:product-images';
+const MAX_IMAGE_EDGE = 1400;
+const JPEG_QUALITY = 0.78;
+
+export function fitImageDimensions(width, height, maxEdge = MAX_IMAGE_EDGE) {
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+export function readProductImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('That image could not be read.'));
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return reject(new Error('That image could not be read.'));
+      const image = new Image();
+      image.onerror = () => reject(new Error('That image could not be read.'));
+      image.onload = () => {
+        try {
+          const dimensions = fitImageDimensions(image.naturalWidth, image.naturalHeight);
+          const canvas = document.createElement('canvas');
+          canvas.width = dimensions.width; canvas.height = dimensions.height;
+          const context = canvas.getContext('2d');
+          if (!context) return reject(new Error('That image could not be prepared.'));
+          context.fillStyle = '#fff';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+          resolve(compressed.length < reader.result.length ? compressed : reader.result);
+        } catch { reject(new Error('That image could not be prepared.')); }
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export function colorImageKey(productId, color) {
   return `${productId}:color:${String(color || '').trim().toLocaleLowerCase('en-US')}`;

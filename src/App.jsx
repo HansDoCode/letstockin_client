@@ -13,7 +13,7 @@ import { code128Bars } from './barcode.js';
 import { parseCashCents } from './pos-money.js';
 import { normalizeProductDetails } from './product-details.js';
 import { SIZE_OPTIONS } from './product-variants.js';
-import { getProductColorImages, loadProductImages, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
+import { getProductColorImages, loadProductImages, PRODUCT_IMAGE_STORAGE_KEY, readProductImage } from './product-images.js';
 
 const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
 const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
@@ -424,15 +424,11 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
     if (!file) return;
     if (!file.type.startsWith('image/')) return setNotice('Choose an image file.');
     if (file.size > 2_000_000) return setNotice('Use an image smaller than 2 MB.');
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return setNotice('That image could not be read.');
-      const next = { ...productImages, [productId]: reader.result };
+    readProductImage(file).then(image => {
+      const next = { ...productImages, [productId]: image };
       try { window.localStorage.setItem(PRODUCT_IMAGE_STORAGE_KEY, JSON.stringify(next)); setProductImages(next); setNotice('Product image saved on this device.'); }
       catch { setNotice('Image could not be saved. Use a smaller file.'); }
-    };
-    reader.onerror = () => setNotice('That image could not be read.');
-    reader.readAsDataURL(file);
+    }).catch(error => setNotice(error.message));
   }
   async function checkout() {
     if (!cart.length || !canPay || loading) return;

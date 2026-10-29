@@ -1,6 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { colorImageKey, deleteProductImages, getProductColorImages, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
+import { colorImageKey, deleteProductImages, fitImageDimensions, getProductColorImages, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
+
+test('image dimensions stay within the storage-friendly edge', () => {
+  assert.deepEqual(fitImageDimensions(4000, 2000, 1400), { width: 1400, height: 700 });
+  assert.deepEqual(fitImageDimensions(800, 600, 1400), { width: 800, height: 600 });
+});
 
 test('color image storage keys and lookup are case-insensitive', () => {
   const images = { [colorImageKey(7, 'Black')]: 'black.png' };
