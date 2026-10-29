@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-:root { --orange:#f36b21; --navy:#102747; --cream:#f8f4ec; --paper:#fffdf9; --line:#e9e2d6; --muted:#718095; --red:#c54e38; font-family:Inter,system-ui,sans-serif; color:var(--navy); background:var(--cream); }
+:root { --orange:#f36b21; --navy:#102747; --cream:#f8f4ec; --paper:#fffdf9; --line:#e9e2d6; --muted:#718095; --red:#c54e38; --green:#26714b; font-family:Inter,system-ui,sans-serif; color:var(--navy); background:var(--cream); }
 .account-status { display:inline-block; width:9px; height:9px; margin-right:8px; border-radius:50%; vertical-align:middle; background:#55b96a }.account-status.inactive { background:#9aa1aa }
 * { box-sizing:border-box } body { margin:0; min-width:320px } button,input { font:inherit } button { cursor:pointer } button:focus-visible,input:focus-visible { outline:3px solid #f7b38d; outline-offset:2px }
 .shell { min-height:100vh; display:flex }.sidebar { width:244px; background:var(--navy); color:#dce5ef; padding:28px 16px; display:flex; flex-direction:column; position:sticky; height:100vh; top:0 }.brand { color:#fff; font-size:18px; font-weight:800; letter-spacing:-.8px; padding:0 10px 40px }.brand-name { display:inline-grid; place-items:center; width:28px; height:28px; margin-right:8px; border-radius:8px; color:var(--navy); background:var(--orange); font-size:11px }.brand-logo { display:block; width:min(100%,180px); height:auto; margin:0 auto; border-radius:10px }nav { display:grid; gap:6px }nav a { color:#bac7d5; padding:13px 14px; text-decoration:none; border-radius:10px; font-size:14px; display:block }nav a.active { color:#fff; background:#264261 } .profile { margin-top:auto; padding:14px; background:#1d3958; border-radius:12px; color:#fff; font-weight:700; font-size:14px }.profile small { color:#abb9c8; font-weight:400 }
@@ -219,6 +219,7 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
 .product-image-input svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round }
 .product-image-input input { position:absolute; width:1px; height:1px; opacity:0 }
 .product-image-input:focus-within span { outline:3px solid #f7b38d; outline-offset:2px }
+.product-image-input,.color-image-picker { display:none; }
 .product-art.photo img,.line-art img { display:block; min-width:0; min-height:0; width:100%; height:100%; object-fit:contain }
 @media (max-width:390px) { .product-art.photo { height:140px } }
 
@@ -472,6 +473,11 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
 .product-picker-submit small { font-size:12px; font-weight:600; }
 .pos-product-picker>.product-picker-submit:disabled { background:#aaa; box-shadow:none; }
 .inventory-pos-picker .product-picker-price small { line-height:1.5; }
+.inventory-pos-picker .product-picker-price .inventory-stock-value.in-stock,
+.inventory-pos-picker .product-picker-price .inventory-stock-label.in-stock { color:var(--green); }
+.inventory-pos-picker .product-picker-price .inventory-stock-value.low,
+.inventory-pos-picker .product-picker-price .inventory-stock-label.low { color:var(--red); }
+.inventory-stock-label { font-weight:700; }
 .inventory-pos-picker .product-size-choices button { display:grid; min-height:48px; height:auto; place-content:center; gap:2px; }
 .inventory-pos-picker .product-size-choices button small { color:var(--muted); font-size:10px; }
 .inventory-pos-picker .product-size-choices button.out-of-stock small { color:var(--red); }
@@ -540,6 +546,7 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
   --line:#344554;
   --muted:#a5b5c4;
   --red:#ff8b78;
+  --green:#79d69b;
 }
 
 .theme-toggle { flex:0 0 44px; width:44px; height:44px; margin:0; padding:0; display:grid; place-items:center; border:0; color:#dce5ef; background:transparent; font-size:0; line-height:1; }
