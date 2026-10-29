@@ -471,6 +471,15 @@ nav button { border:0; color:#bac7d5; background:transparent; padding:13px 14px;
 .pos-product-picker>.product-picker-submit:hover,.pos-product-picker>.product-picker-submit:focus-visible { background:#d95716; }
 .product-picker-submit small { font-size:12px; font-weight:600; }
 .pos-product-picker>.product-picker-submit:disabled { background:#aaa; box-shadow:none; }
+.inventory-pos-picker .product-picker-price small { line-height:1.5; }
+.inventory-pos-picker .product-size-choices button { display:grid; min-height:48px; height:auto; place-content:center; gap:2px; }
+.inventory-pos-picker .product-size-choices button small { color:var(--muted); font-size:10px; }
+.inventory-pos-picker .product-size-choices button.out-of-stock small { color:var(--red); }
+.inventory-pos-picker .inventory-detail-actions { margin:22px 0 0; padding-top:18px; justify-content:stretch; border-top:1px solid #ededed; }
+.inventory-pos-picker .inventory-detail-actions .adjust-button { flex:1; min-height:44px; }
+.inventory-pos-picker .inventory-detail-actions .barcode-button { color:#222; background:#fff; }
+.inventory-pos-picker .inventory-detail-actions .add-stock-button { border-color:var(--orange); background:var(--orange); }
+.inventory-pos-picker .inventory-detail-adjust-form { margin:16px 0 0; padding:14px; border:1px solid #ededed; border-radius:12px; background:#f7f7f7; }
 @media (max-width:760px) {
   .product-detail-overlay { place-items:end center; padding:0; }
   .pos-product-picker { width:100%; max-height:calc(100vh - 12px); border-radius:20px 20px 0 0; }
