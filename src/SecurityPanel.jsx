@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { api } from './api.js';
 import Skeleton from './Skeleton.jsx';
+import PasswordField from './PasswordField.jsx';
 
 export default function SecurityPanel() {
   const [status, setStatus] = useState(null);
@@ -83,7 +84,7 @@ export default function SecurityPanel() {
         {notice && <p className="form-notice" role="status">{notice}</p>}
         {!status?.enabled && !setup && <form onSubmit={startSetup}>
           <p>MFA is not enabled for this account.</p>
-          <label className="field">Current password<input required type="password" autoComplete="current-password" minLength="12" maxLength="256" value={password} onChange={event => setPassword(event.target.value)} /></label>
+          <PasswordField label="Current password" required autoComplete="current-password" maxLength={256} value={password} onChange={event => setPassword(event.target.value)} />
           <button className="checkout" disabled={busy}>{busy ? 'Starting…' : 'Set up MFA'}</button>
         </form>}
         {setup && <div className="security-setup">
@@ -100,7 +101,7 @@ export default function SecurityPanel() {
           <p>MFA is enabled. Sign-in requires your password and an authenticator code.</p>
           <p className="security-muted">Unused recovery codes: {status.recoveryCodesRemaining}</p>
           <form onSubmit={rotateCodes}>
-            <label className="field">Current password<input required type="password" autoComplete="current-password" minLength="12" maxLength="256" value={password} onChange={event => setPassword(event.target.value)} /></label>
+            <PasswordField label="Current password" required autoComplete="current-password" maxLength={256} value={password} onChange={event => setPassword(event.target.value)} />
             <label className="field">Authenticator or recovery code<input required autoComplete="one-time-code" value={code} onChange={event => setCode(event.target.value)} /></label>
             <div className="security-actions"><button className="checkout" disabled={busy}>{busy ? 'Working…' : 'Regenerate recovery codes'}</button><button type="button" className="secondary" disabled={busy} onClick={disable}>Disable MFA</button></div>
           </form>

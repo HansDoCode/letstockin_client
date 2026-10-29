@@ -7,15 +7,27 @@ import ProductPanel from './ProductPanel.jsx';
 import SecurityPanel from './SecurityPanel.jsx';
 import CameraScanner from './CameraScanner.jsx';
 import Skeleton from './Skeleton.jsx';
+import PasswordField from './PasswordField.jsx';
+import { PASSWORD_PATTERN } from './password-rules.js';
 import { code128Bars } from './barcode.js';
 import { parseCashCents } from './pos-money.js';
 import { normalizeProductDetails } from './product-details.js';
 import { SIZE_OPTIONS } from './product-variants.js';
+import { getProductColorImages, loadProductImages, PRODUCT_IMAGE_STORAGE_KEY } from './product-images.js';
 
 const money = cents => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((cents || 0) / 100);
 const productPhoto = name => name?.trim().toLowerCase().startsWith('augyew') ? `${import.meta.env.BASE_URL}images/augyew-graphic-tee-vintage-pos.png` : null;
+function variantImage(product, variant) {
+  return variant?.image || product.images?.[variant?.color] || product.colorImages?.[variant?.color] || product.image;
+}
+function variantImageFilter(color) {
+  const value = String(color || '').toLowerCase();
+  if (/white|ivory|cream/.test(value)) return { filter: 'grayscale(1) brightness(1.25)' };
+  if (/black|gray|grey/.test(value)) return { filter: 'grayscale(1) brightness(.58) contrast(1.15)' };
+  if (/navy|blue/.test(value)) return { filter: 'hue-rotate(165deg) saturate(1.4)' };
+  return undefined;
+}
 const logoPath = `${import.meta.env.BASE_URL}images/letstockin-logo.png`;
-const productImageStorageKey = 'letstockin:product-images';
 const remoteScannerStorageKey = 'letstockin:remote-scanner-sessions';
 const loginEmailStorageKey = 'letstockin:login-email';
 function loadLoginEmail() {
@@ -29,7 +41,7 @@ const googleAuthMessages = {
   'google-cancelled': 'Google sign-in was cancelled.',
   'google-invalid-state': 'Google sign-in expired. Please try again.',
   'google-not-registered': 'This Google account is not registered. Ask an administrator to create your account first.',
-  'google-account-conflict': 'This Google account is linked to a different Letstockin account.',
+  'google-account-conflict': "This Google account is linked to a different Let'StockIn account.",
   'google-failed': 'Google sign-in could not be completed. Try again or use email and password.'
 };
 const validRemoteScannerToken = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -49,10 +61,27 @@ function loadRemoteScannerSessions() {
 function saveRemoteScannerSessions(sessions, cursors) {
   try { window.localStorage.setItem(remoteScannerStorageKey, JSON.stringify(sessions.map(session => ({ token: session.token, pairedAt: session.pairedAt || null, cursor: cursors.get(session.token) ?? session.cursor ?? 0 })))); } catch {}
 }
-const navigation = [['pos', '▦', 'Point of sale'], ['inventory', '⌘', 'Inventory'], ['products', '◫', 'Products'], ['reports', '↗', 'Reports'], ['team', '◉', 'Team'], ['security', 'S', 'Security']];
+const navigation = [['pos', 'Point of sale'], ['inventory', 'Inventory'], ['products', 'Products'], ['reports', 'Reports'], ['team', 'Team'], ['security', 'Security']];
+const themeStorageKey = 'letstockin:theme';
+function loadTheme() {
+  try { return window.localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
+}
 
-function Brand() {
-  return <div className="brand"><img className="brand-logo" src={logoPath} alt="" /><span className="brand-name">Letstockin</span></div>;
+function PosNavIcon() {
+  return <svg className="nav-pos-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="2" width="15" height="11" rx="1.5" /><path d="M5.5 5h7M5.5 8h7M5.5 11h4M18 6h3v5h-3M9 13l-.5 3h4l-.5-3M3 17h18v5H3zM13 17v5" /><circle cx="16" cy="19" r=".8" fill="currentColor" stroke="none" /><circle cx="19" cy="19" r=".8" fill="currentColor" stroke="none" /><circle cx="16" cy="21" r=".8" fill="currentColor" stroke="none" /><circle cx="19" cy="21" r=".8" fill="currentColor" stroke="none" /></svg>;
+}
+
+function NavIcon({ id }) {
+  if (id === 'pos') return <PosNavIcon />;
+  if (id === 'products') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 9-4 9 4-9 4-9-4Z" /><path d="M3 7v10l9 4 9-4V7M12 11v10M7.5 5l9 4" /></svg>;
+  if (id === 'inventory') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor" fillRule="evenodd"><path d="M2 8.8 12 3l10 5.8V21H2V8.8Zm4.2 2.6v2.8h3v-2.8h-3Zm4.3 0v2.8h3v-2.8h-3Zm4.3 0v2.8h3v-2.8h-3Zm-9 6.1v1.8h13v-1.8h-13Z" /></svg>;
+  if (id === 'reports') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 16 8 11l4 4 7-8" /><path d="M16 7h3v3" /></svg>;
+  if (id === 'team') return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor"><circle cx="8.5" cy="7.5" r="3" /><path d="M2 19c0-3.4 2.8-6 6.5-6s6.5 2.6 6.5 6v1H2v-1Z" /><circle cx="17.5" cy="7" r="2.4" /><path d="M14.5 13.4c.9-.5 1.9-.8 3-.8 2.6 0 4.5 1.9 4.5 4.7V20h-3v-1c0-2.2-.8-4.1-2.2-5.6-.7-.1-1.5-.1-2.3 0Z" /></svg>;
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.5 20 5v6.2c0 5-3.2 8.4-8 10.3-4.8-1.9-8-5.3-8-10.3V5l8-2.5Z" /><rect x="8.2" y="10.5" width="7.6" height="5.5" rx=".8" /><path d="M10 10.5V9a2 2 0 0 1 4 0v1.5" /></svg>;
+}
+
+function Brand({ theme, onToggleTheme }) {
+  return <div className="brand"><img className="brand-logo" src={logoPath} alt="" /><span className="brand-name">Let'StockIn</span>{onToggleTheme && <button type="button" className={theme === 'dark' ? 'theme-toggle is-dark' : 'theme-toggle'} aria-pressed={theme === 'dark'} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} onClick={onToggleTheme}><span className="theme-toggle-track" aria-hidden="true"><span className="theme-toggle-thumb">{theme === 'dark' ? '☾' : '☀'}</span></span></button>}</div>;
 }
 
 function SessionSkeleton() {
@@ -78,6 +107,7 @@ export default function App() {
   const [alertsError, setAlertsError] = useState('');
   const [inventoryQuery, setInventoryQuery] = useState('');
   const [navOpen, setNavOpen] = useState(false);
+  const [theme, setTheme] = useState(loadTheme);
   const resetRoute = window.location.pathname === '/reset-password';
   const authErrorCode = useMemo(() => new URLSearchParams(window.location.search).get('authError') || '', []);
   const authError = Object.prototype.hasOwnProperty.call(googleAuthMessages, authErrorCode) ? googleAuthMessages[authErrorCode] : '';
@@ -100,6 +130,11 @@ export default function App() {
     url.searchParams.delete('authError');
     window.history.replaceState({}, '', url.toString());
   }, [authErrorCode]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { window.localStorage.setItem(themeStorageKey, theme); } catch {}
+  }, [theme]);
 
   const loadAlerts = useCallback(async () => {
     if (!user) return;
@@ -132,7 +167,7 @@ export default function App() {
   async function signOut() { await api.logout(); setUser(null); setAlerts([]); setView('pos'); setNavOpen(false); }
 
   return <main className="shell">
-    <aside id="main-navigation" className={navOpen ? 'sidebar open' : 'sidebar'}><Brand /><nav>{allowed.map(([id, icon, label]) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => { setView(id); setNavOpen(false); setAlertsOpen(false); }}><i>{icon}</i><b>{label}</b></button>)}</nav><div className="profile">{user.name}<br/><small>{user.role} account</small><button className="signout" onClick={signOut}>Sign out</button></div></aside>
+    <aside id="main-navigation" className={navOpen ? 'sidebar open' : 'sidebar'}><Brand theme={theme} onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} /><nav>{allowed.map(([id, label]) => <button type="button" key={id} className={view === id ? 'active' : ''} onClick={() => { setView(id); setNavOpen(false); setAlertsOpen(false); }}><i><NavIcon id={id} /></i><b>{label}</b></button>)}</nav><div className="profile">{user.name}<br/><small>{user.role} account</small><button className="signout" onClick={signOut}>Sign out</button></div></aside>
     <button type="button" className={navOpen ? 'nav-toggle icon open' : 'nav-toggle icon'} aria-label={navOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={navOpen} aria-controls="main-navigation" onClick={() => { setNavOpen(open => !open); setAlertsOpen(false); }}>{navOpen ? '×' : '☰'}</button>
     {navOpen && <button type="button" className="nav-scrim" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
     <section className="workspace">
@@ -210,7 +245,7 @@ function Login({ onLogin, initialError = '' }) {
   async function submit(event) { event.preventDefault(); setBusy(true); setError(''); try { const result = await api.login({ email, password, remember }); if (result.mfaRequired) { setMfaChallenge(result.challenge); return; } finishLogin(result); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
   if (mfaChallenge) return <MfaLogin challenge={mfaChallenge} remember={remember} onLogin={finishLogin} onBack={() => setMfaChallenge('')} />;
   if (resetMode) return <PasswordResetRequest onBack={() => setResetMode(false)} />;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><div className="login-options"><a className="google-sign-in" href={api.googleLoginUrl()}><span className="google-logo-tile" aria-hidden="true"><svg className="google-logo" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.651 32.657 29.119 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.278 4 24 4 12.954 4 4 12.954 4 24s8.954 20 20 20c10.493 0 19.386-7.613 19.386-20 0-1.341-.138-2.651-.389-3.917Z" /><path fill="#FF3D00" d="M6.306 14.691 12.878 19.51C14.654 15.113 18.967 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.278 4 24 4c-7.682 0-14.325 4.337-17.694 10.691Z" /><path fill="#4CAF50" d="M24 44c5.182 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.099 0-9.616-3.317-11.386-7.686l-6.522 5.025C9.505 39.556 16.227 44 24 44Z" /><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.084 5.57l.003-.002 6.19 5.238C36.973 39.205 44 34 44 24c0-1.341-.138-2.651-.389-3.917Z" /></svg></span>Continue with Google</a><div className="login-divider"><span>or use email and password</span></div></div><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><label className="field">Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Sign in</h1><div className="login-options"><a className="google-sign-in" href={api.googleLoginUrl()}><span className="google-logo-tile" aria-hidden="true"><svg className="google-logo" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.651 32.657 29.119 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.278 4 24 4 12.954 4 4 12.954 4 24s8.954 20 20 20c10.493 0 19.386-7.613 19.386-20 0-1.341-.138-2.651-.389-3.917Z" /><path fill="#FF3D00" d="M6.306 14.691 12.878 19.51C14.654 15.113 18.967 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.278 4 24 4c-7.682 0-14.325 4.337-17.694 10.691Z" /><path fill="#4CAF50" d="M24 44c5.182 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.099 0-9.616-3.317-11.386-7.686l-6.522 5.025C9.505 39.556 16.227 44 24 44Z" /><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.084 5.57l.003-.002 6.19 5.238C36.973 39.205 44 34 44 24c0-1.341-.138-2.651-.389-3.917Z" /></svg></span>Continue with Google</a><div className="login-divider"><span>or use email and password</span></div></div><label className="field">Email<input required type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} /></label><PasswordField label="Password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /><label className="remember-field" htmlFor="remember-me"><input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /><span>Remember me</span></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button><button type="button" className="secondary login-link" onClick={() => { setError(''); setResetMode(true); }}>Forgot password?</button></form></main>;
 }
 
 function MfaLogin({ challenge, remember, onLogin, onBack }) {
@@ -230,7 +265,7 @@ function PasswordResetPage() {
   const [password, setPassword] = useState(''); const [confirmation, setConfirmation] = useState(''); const [error, setError] = useState(''); const [done, setDone] = useState(false); const [busy, setBusy] = useState(false);
   async function submit(event) { event.preventDefault(); setError(''); if (!token) return setError('This reset link is invalid or expired.'); if (password !== confirmation) return setError('Passwords do not match.'); setBusy(true); try { await api.completePasswordReset({ token, password }); setDone(true); } catch (cause) { setError(cause.message); } finally { setBusy(false); } }
   if (done) return <main className="login-page"><section className="login-card"><Brand /><h1>Password updated</h1><p>Your password was changed. Sign in with the new password.</p><a className="secondary reset-link" href="/">Return to sign in</a></section></main>;
-  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Choose a new password</h1><p>Use at least 12 characters. This link can only be used once.</p><label className="field">New password<input required minLength="12" maxLength="256" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label><label className="field">Confirm password<input required minLength="12" maxLength="256" type="password" autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label>{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button></form></main>;
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><Brand /><h1>Choose a new password</h1><p>Use 8-50 characters with uppercase, lowercase, number, and symbol. This link can only be used once.</p><PasswordField label="New password" required minLength={8} maxLength={50} pattern={PASSWORD_PATTERN} title="Use 8-50 characters with uppercase, lowercase, number, and symbol." autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} showRequirements /><PasswordField label="Confirm password" required minLength={8} maxLength={50} pattern={PASSWORD_PATTERN} title="Use 8-50 characters with uppercase, lowercase, number, and symbol." autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} />{error && <p className="form-notice" role="alert">{error}</p>}<button className="checkout" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button></form></main>;
 }
 
 function Receipt({ receipt }) {
@@ -240,7 +275,7 @@ function Receipt({ receipt }) {
   let barcodeX = 12;
   return <section className="receipt" aria-label={`Receipt for sale ${receipt.id}`}>
     <div className="receipt-paper">
-      <div className="receipt-title"><h2>Cash Receipt</h2><p>Letstockin</p></div>
+      <div className="receipt-title"><h2>Cash Receipt</h2><p>Let'StockIn</p></div>
       <div className="receipt-divider" />
       <dl className="receipt-meta"><div><dt>Address:</dt><dd>—</dd></div><div><dt>Tel:</dt><dd>—</dd></div><div><dt>Date:</dt><dd>{receiptDate}</dd></div><div><dt>Manager:</dt><dd>{receipt.staffName}</dd></div></dl>
       <div className="receipt-divider" />
@@ -282,9 +317,10 @@ function ProductCardSkeleton() {
 function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock }) {
   const [products, setProducts] = useState([]); const [query, setQuery] = useState(''); const [cart, setCart] = useState([]); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(false); const [catalogLoading, setCatalogLoading] = useState(true); const [catalogError, setCatalogError] = useState(''); const [receipt, setReceipt] = useState(null); const [sort, setSort] = useState('stock'); const [cameraOpen, setCameraOpen] = useState(false); const [qrProduct, setQrProduct] = useState(null); const [remoteSessions, setRemoteSessions] = useState(loadRemoteScannerSessions); const [remoteDialogOpen, setRemoteDialogOpen] = useState(false); const [remotePairBusy, setRemotePairBusy] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [productImages, setProductImages] = useState(() => { try { const saved = JSON.parse(window.localStorage.getItem(productImageStorageKey) || '{}'); return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}; } catch { return {}; } });
+  const [productImages, setProductImages] = useState(loadProductImages);
   const [cashReceived, setCashReceived] = useState('');
   const searchRef = useRef(null); const cartRef = useRef(null); const remoteSessionsRef = useRef(remoteSessions); const remoteCursorsRef = useRef(new Map(remoteSessions.map(session => [session.token, session.cursor]))); const resolveCodeRef = useRef(null);
+  useEffect(() => { const refreshImages = () => setProductImages(loadProductImages()); window.addEventListener('letstockin:product-images-updated', refreshImages); return () => window.removeEventListener('letstockin:product-images-updated', refreshImages); }, []);
   function updateRemoteSessions(next) { remoteSessionsRef.current = next; setRemoteSessions(next); saveRemoteScannerSessions(next, remoteCursorsRef.current); }
   function removeRemoteSession(token) { remoteCursorsRef.current.delete(token); const next = remoteSessionsRef.current.filter(session => session.token !== token); updateRemoteSessions(next); if (!next.length) setRemoteDialogOpen(false); }
   useEffect(() => {
@@ -310,15 +346,19 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
 
   function openProductDetails(product, variants) {
     if (!variants.length) return;
-    setQrProduct(normalizeProductDetails({ ...product, image: productImages[product.id] || productPhoto(product.name), variants }));
+    const images = loadProductImages();
+    setQrProduct(normalizeProductDetails({ ...product, image: images[product.id] || productPhoto(product.name), colorImages: getProductColorImages(product.id, variants, images), variants }));
   }
 
-  function add(product, variant, scanned = false) {
+  function add(product, variant, scanned = false, requestedQuantity = 1) {
     if (loading) return;
     if (!variant?.stock) return setNotice('That size and color is out of stock.');
-    if (cart.find(line => line.variant.id === variant.id)?.quantity >= variant.stock) return setNotice(`Only ${variant.stock} available for ${product.name}, ${variant.size} / ${variant.color}.`);
-    setCart(items => { const line = items.find(item => item.variant.id === variant.id); return line ? items.map(item => item.variant.id === variant.id ? { ...item, quantity: Math.min(item.quantity + 1, variant.stock) } : item) : [...items, { product, variant, quantity: 1, discountCents: 0 }]; });
-    setNotice(`${scanned ? 'Product found — ' : ''}${product.name}, ${variant.size} / ${variant.color}, ${money(variant.priceCents)} added.`);
+    const quantity = Math.max(1, Number(requestedQuantity) || 1);
+    const existing = cart.find(line => line.variant.id === variant.id);
+    if ((existing?.quantity || 0) + quantity > variant.stock) return setNotice(`Only ${variant.stock} available for ${product.name}, ${variant.size} / ${variant.color}.`);
+    setCart(items => { const line = items.find(item => item.variant.id === variant.id); return line ? items.map(item => item.variant.id === variant.id ? { ...item, quantity: item.quantity + quantity } : item) : [...items, { product, variant, quantity, discountCents: 0 }]; });
+    setNotice(`${scanned ? 'Product found — ' : ''}${product.name}, ${variant.size} / ${variant.color}, ${money(variant.priceCents * quantity)} added.`);
+    return true;
   }
   function updateLine(variantId, patch) { setCart(lines => lines.map(line => { if (line.variant.id !== variantId) return line; const next = { ...line, ...patch }; const gross = next.variant.priceCents * next.quantity; next.discountCents = Math.min(Math.max(0, Number.isSafeInteger(next.discountCents) ? next.discountCents : 0), gross); return next; })); }
   async function resolveCode(code) {
@@ -326,7 +366,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
       const result = await api.lookup(code);
       const matched = result.variants.find(variant => String(variant.id) === String(result.matchedVariantId));
       if (!matched) throw new Error('The matched product variant is unavailable.');
-       if (result.identifierType === 'qr') { setQrProduct(normalizeProductDetails({ ...result, image: productImages[result.productId] || productPhoto(result.name) })); setNotice(`${result.name} product details opened.`); }
+       if (result.identifierType === 'qr') { const images = loadProductImages(); setQrProduct(normalizeProductDetails({ ...result, image: images[result.productId] || productPhoto(result.name), colorImages: getProductColorImages(result.productId, result.variants, images) })); setNotice(`${result.name} product details opened.`); }
       else add({ id: result.productId, name: result.name }, { ...matched, stock: matched.quantity }, true);
     } catch (error) { setNotice(error.message || 'No product matched that barcode or QR code.'); }
   }
@@ -388,7 +428,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
     reader.onload = () => {
       if (typeof reader.result !== 'string') return setNotice('That image could not be read.');
       const next = { ...productImages, [productId]: reader.result };
-      try { window.localStorage.setItem(productImageStorageKey, JSON.stringify(next)); setProductImages(next); setNotice('Product image saved on this device.'); }
+      try { window.localStorage.setItem(PRODUCT_IMAGE_STORAGE_KEY, JSON.stringify(next)); setProductImages(next); setNotice('Product image saved on this device.'); }
       catch { setNotice('Image could not be saved. Use a smaller file.'); }
     };
     reader.onerror = () => setNotice('That image could not be read.');
@@ -427,11 +467,11 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
             const aSize = SIZE_OPTIONS.indexOf(a.size); const bSize = SIZE_OPTIONS.indexOf(b.size);
             return a.color.localeCompare(b.color) || (aSize < 0 ? 99 : aSize) - (bSize < 0 ? 99 : bSize);
           });
-          const onePrice = variants.length > 0 && variants.every(variant => variant.priceCents === variants[0].priceCents);
+          const lowestPrice = variants.length ? Math.min(...variants.map(variant => variant.priceCents)) : null;
           const photo = productImages[product.id] || productPhoto(product.name);
           return <article className="product-card" key={product.id} role="button" tabIndex={0} aria-label={`View details for ${product.name}`} onClick={event => { if (event.target.closest?.('button, input, label, a, select, textarea')) return; openProductDetails(product, variants); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return; event.preventDefault(); openProductDetails(product, variants); }}>
           <div className={photo ? 'product-art photo' : 'product-art'}>{photo ? <img src={photo} alt="" loading="lazy" /> : product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}<label className="product-image-input" aria-label={photo ? 'Change product image' : 'Add product image'} title={photo ? 'Change product image' : 'Add product image'}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m4 17 4.5-4.5 3 3 2.5-2.5L20 17" /></svg><input type="file" accept="image/*" onChange={event => saveProductImage(product.id, event)} /></label></div>
-          <div className="product-info"><h3>{product.name}</h3>{onePrice && <strong>{money(variants[0].priceCents)}</strong>}</div>
+          <div className="product-info"><h3>{product.name}</h3>{lowestPrice != null && <strong>{money(lowestPrice)}</strong>}</div>
         </article>;
         })}</div>}
       </section>
@@ -455,7 +495,7 @@ function PosPanel({ onStockChanged, lowStockCount, alertsOpen, onOpenLowStock })
     {!!cart.length && <button type="button" className="mobile-cart-link" onClick={() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>View cart · {money(totals.total)}</button>}
     {receipt && <Receipt receipt={receipt} />}
     {cameraOpen && <CameraScanner onClose={closeCamera} onDetected={code => { closeCamera(); resolveCode(code); }} />}
-    {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant) => { add(product, { ...variant, stock: variant.quantity }); setQrProduct(null); }} />}
+    {qrProduct && <ProductDetailsDialog product={qrProduct} onClose={() => setQrProduct(null)} onAdd={(product, variant, quantity) => { if (add(product, { ...variant, stock: variant.quantity }, false, quantity)) setQrProduct(null); }} />}
     {remoteSessions.length > 0 && remoteDialogOpen && <RemoteScannerDialog sessions={remoteSessions} onClose={() => setRemoteDialogOpen(false)} onStop={stopRemoteScanner} onPair={pairPhone} pairBusy={remotePairBusy} />}
   </>;
 }
@@ -478,7 +518,14 @@ function RemoteScannerDialog({ sessions, onClose, onStop, onPair, pairBusy }) {
 function ProductDetailsDialog({ product, onClose, onAdd }) {
   const closeRef = useRef(null); const dialogRef = useRef(null); const returnFocusRef = useRef(document.activeElement);
   const [selectedId, setSelectedId] = useState(product.matchedVariantId);
+  const [quantity, setQuantity] = useState(1);
   const selected = product.variants.find(variant => String(variant.id) === String(selectedId)) || product.variants[0];
+  const colors = [...new Map(product.variants.map(variant => [variant.color, product.variants.filter(item => item.color === variant.color)])).entries()];
+  const colorVariants = product.variants.filter(variant => variant.color === selected.color);
+  const selectedImage = variantImage(product, selected);
+  const priceFrom = Math.min(...product.variants.map(variant => variant.priceCents));
   useEffect(() => { closeRef.current?.focus(); return () => returnFocusRef.current?.focus(); }, []);
-  return <div className="product-detail-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="product-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="product-detail-title"><div className="camera-head"><div><h2 id="product-detail-title">{product.name}</h2></div><button ref={closeRef} className="secondary" onClick={onClose}>Close</button></div>{product.image && <img className="product-detail-image" src={product.image} alt={`${product.name} product`} /> }<div className="detail-summary"><b>{money(selected.priceCents)}</b></div><dl><div><dt>Size</dt><dd>{selected.size}</dd></div><div><dt>Color</dt><dd>{selected.color}</dd></div><div className={selected.quantity > selected.reorderPoint ? 'stock-status good' : 'stock-status low'}><dt>Available</dt><dd>{selected.quantity} pieces</dd></div></dl><div className="detail-variants" aria-label="Product variants">{product.variants.map(variant => { const selectedVariant = String(variant.id) === String(selected.id); return <button type="button" key={variant.id} className={selectedVariant ? 'selected' : ''} aria-pressed={selectedVariant} onClick={() => setSelectedId(variant.id)}><b>{variant.size}</b><span>{variant.color}</span></button>; })}</div><button className="checkout" disabled={!selected.quantity} onClick={() => onAdd({ id: product.productId, name: product.name }, selected)}>{selected.quantity ? `Add to cart · ${money(selected.priceCents)}` : 'Out of stock'}</button></section></div>;
+  useEffect(() => { setQuantity(1); }, [selectedId]);
+  function chooseColor(variants) { setSelectedId((variants.find(variant => variant.quantity > 0) || variants[0]).id); }
+  return <div className="product-detail-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => handleDialogKeys(event, dialogRef.current, onClose)}><section ref={dialogRef} className="product-detail-dialog pos-product-picker" role="dialog" aria-modal="true" aria-labelledby="product-detail-title"><div className="product-picker-head"><h2 id="product-detail-title">{product.name}</h2><button ref={closeRef} className="product-picker-close" onClick={onClose} aria-label="Close product details">×</button></div><div className="product-picker-summary"><div className="product-picker-image">{selectedImage ? <img src={selectedImage} style={!selected.image && !product.images?.[selected.color] && !product.colorImages?.[selected.color] ? variantImageFilter(selected.color) : undefined} alt={`${product.name} ${selected.color}`} /> : <span>{product.name.split(' ').slice(0, 2).map(word => word[0]).join('')}</span>}</div><div className="product-picker-price"><b>{money(priceFrom)}</b><small>Stock: {selected.quantity}</small></div></div><section className="product-picker-section" aria-labelledby="color-heading"><h3 id="color-heading">Color</h3><div className="product-color-choices">{colors.map(([color, variants]) => { const active = color === selected.color; const colorVariant = variants[0]; const image = variantImage(product, colorVariant); return <button type="button" key={color} className={active ? 'selected' : ''} aria-pressed={active} onClick={() => chooseColor(variants)}><span className="product-color-image">{image ? <img src={image} style={!colorVariant.image && !product.images?.[color] && !product.colorImages?.[color] ? variantImageFilter(color) : undefined} alt="" /> : color}</span><span>{color}</span></button>; })}</div></section><section className="product-picker-section" aria-labelledby="size-heading"><h3 id="size-heading">Size</h3><div className="product-size-choices" role="group" aria-label={`Sizes for ${selected.color}`}>{colorVariants.map(variant => { const active = String(variant.id) === String(selected.id); return <button type="button" key={variant.id} className={`${active ? 'selected ' : ''}${variant.quantity ? 'available' : 'out-of-stock'}`} aria-pressed={active} disabled={!variant.quantity} onClick={() => setSelectedId(variant.id)}><span>{variant.size}</span></button>; })}</div></section><section className="product-picker-quantity" aria-labelledby="quantity-heading"><h3 id="quantity-heading">Quantity</h3><div className="quantity-control"><button type="button" disabled={quantity <= 1} onClick={() => setQuantity(value => value - 1)} aria-label="Decrease quantity">−</button><input className="quantity-input" type="number" min="1" max={selected.quantity} step="1" value={quantity} disabled={!selected.quantity} onChange={event => setQuantity(Math.min(selected.quantity, Math.max(1, Number(event.target.value) || 1)))} aria-label="Quantity" /><button type="button" disabled={quantity >= selected.quantity} onClick={() => setQuantity(value => value + 1)} aria-label="Increase quantity">+</button></div></section><button className="checkout product-picker-submit" disabled={!selected.quantity} onClick={() => onAdd({ id: product.productId, name: product.name }, selected, quantity)}><span>{selected.quantity ? 'Add to cart' : 'Out of stock'}</span><small>{selected.quantity ? money(selected.priceCents * quantity) : ''}</small></button></section></div>;
 }
